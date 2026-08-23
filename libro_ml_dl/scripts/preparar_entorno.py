@@ -14,7 +14,7 @@ CORE_URL = (
     "https://github.com/pyodide/pyodide/releases/download/"
     f"{PYODIDE_VERSION}/{CORE_ARCHIVE}"
 )
-CORE_SHA256 = "f528dccea95fa8ec54295fd65bf86dd61183d11f0e52563dc8eadda45e0f78d6"
+CORE_SHA256 = "f528dccea95fa8ec54295fd65bf86dd61183d11f0e52563dc8eadda45e0f78d6"  # pragma: allowlist secret  # noqa: E501
 PACKAGE_BASE_URL = f"https://cdn.jsdelivr.net/pyodide/v{PYODIDE_VERSION}/full/"
 REQUIRED_PACKAGES = ("numpy", "pandas", "matplotlib", "scikit-learn")
 CORE_REQUIRED_FILES = (

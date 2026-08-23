@@ -78,7 +78,7 @@ class PyodidePreparationTests(unittest.TestCase):
             path.write_bytes(b"abc")
             self.assertEqual(
                 sha256_file(path),
-                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",  # pragma: allowlist secret  # noqa: E501
             )
 
     def test_bad_download_hash_never_publishes_target(self) -> None:
