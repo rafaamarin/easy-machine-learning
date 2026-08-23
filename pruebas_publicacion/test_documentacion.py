@@ -53,6 +53,46 @@ class DocumentationTests(unittest.TestCase):
         self.assertIn("MIT License", code_license)
         self.assertIn("Creative Commons Attribution 4.0", content_license)
 
+    def test_citation_uses_code_license_without_release_date(self) -> None:
+        source = REPO_ROOT.joinpath("CITATION.cff").read_text(encoding="utf-8")
+        self.assertRegex(source, r"(?m)^license: MIT$")
+        self.assertNotRegex(source, r"(?m)^date-released:")
+
+    def test_content_license_boundary_remains_explicit(self) -> None:
+        readme = REPO_ROOT.joinpath("README.md").read_text(encoding="utf-8")
+        content_license = REPO_ROOT.joinpath("LICENSE-CONTENT").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("[licencia MIT](LICENSE-CODE)", readme)
+        self.assertIn(
+            "[Creative Commons Attribution 4.0 Internacional](LICENSE-CONTENT)",
+            readme,
+        )
+        self.assertIn(
+            "educational text, notebooks, and visual assets", content_license
+        )
+
+    def test_download_zip_requires_git_clone_for_full_verification(self) -> None:
+        source = REPO_ROOT.joinpath("README.md").read_text(encoding="utf-8")
+        normalized_source = " ".join(source.split())
+        self.assertIn(
+            "El ZIP permite leer y ejecutar el proyecto", normalized_source
+        )
+        self.assertIn(
+            "la verificación funcional y de seguridad completa requiere un "
+            "clon Git autenticado",
+            normalized_source,
+        )
+
+    def test_lightweight_server_enters_book_directory_from_repo_root(self) -> None:
+        source = REPO_ROOT.joinpath("libro_ml_dl/README.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(
+            "cd libro_ml_dl\npython3 -m http.server 8000 --bind 127.0.0.1",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

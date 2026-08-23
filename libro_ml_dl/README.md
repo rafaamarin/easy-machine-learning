@@ -14,6 +14,7 @@ prepara el entorno local opcional de JupyterLab. No registra kernels globales.
 ## Modo ligero
 
 ```bash
+cd libro_ml_dl
 python3 -m http.server 8000 --bind 127.0.0.1
 ```
 

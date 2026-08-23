@@ -40,7 +40,9 @@ git clone git@github.com:rafaamarin/easy-machine-learning.git
 
 Para descargar un ZIP, inicia sesión en GitHub con una cuenta autorizada, abre
 el repositorio privado y elige **Code → Download ZIP**. Descomprime el archivo
-antes de continuar.
+antes de continuar. El ZIP permite leer y ejecutar el proyecto, pero la
+verificación funcional y de seguridad completa requiere un clon Git
+autenticado porque ambas puertas usan el inventario del repositorio.
 
 ## Instalar y ejecutar
 
@@ -107,8 +109,7 @@ Los siguientes bloques están planificados y **todavía no están disponibles**:
 El código se distribuye bajo la [licencia MIT](LICENSE-CODE). El texto
 educativo, los notebooks y los activos visuales se distribuyen bajo
 [Creative Commons Attribution 4.0 Internacional](LICENSE-CONTENT). Los metadatos
-de cita están en [`CITATION.cff`](CITATION.cff), versión `0.1.0`, publicada el
-2026-08-23.
+de cita del software están en [`CITATION.cff`](CITATION.cff), versión `0.1.0`.
 
 ## Plataformas y limitaciones
 
