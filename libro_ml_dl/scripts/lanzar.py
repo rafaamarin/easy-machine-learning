@@ -192,7 +192,7 @@ def main() -> int:
 
         book_url = web_url
         if not arguments.sin_jupyter:
-            jupyter = jupyter_override or find_jupyter_executable(vault_root)
+            jupyter = jupyter_override or find_jupyter_executable(book_root)
             if jupyter is None:
                 print("AVISO: Jupyter no encontrado; continúa el modo web.")
             else:

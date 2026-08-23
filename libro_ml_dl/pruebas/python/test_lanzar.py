@@ -8,12 +8,13 @@ import time
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.lanzar import (
     build_jupyter_command,
     find_free_port,
     find_jupyter_executable,
+    main,
     resolve_vault_root,
     stop_processes,
     wait_for_port,
@@ -82,6 +83,50 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("--ServerApp.root_dir=/tmp/repo", command)
         self.assertIn("--ServerApp.port_retries=0", command)
         self.assertNotIn("--allow-root", command)
+
+    def test_public_project_jupyter_is_selected_while_vault_is_served(self) -> None:
+        book_root = Path(__file__).resolve().parents[2]
+        vault_root = Path("/tmp/vault")
+        project_jupyter = book_root / ".venv" / "bin" / "jupyter"
+        processes = [Mock(), Mock()]
+        for process in processes:
+            process.poll.return_value = 0
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["lanzar.py", "--sin-navegador"],
+            ),
+            patch(
+                "scripts.lanzar.resolve_vault_root",
+                return_value=vault_root,
+            ),
+            patch(
+                "scripts.lanzar.find_jupyter_executable",
+                return_value=project_jupyter,
+            ) as find_jupyter,
+            patch(
+                "scripts.lanzar.find_free_port",
+                side_effect=[8000, 8888],
+            ),
+            patch("scripts.lanzar.wait_for_port"),
+            patch(
+                "scripts.lanzar.kernel_names",
+                return_value={"python3"},
+            ),
+            patch(
+                "scripts.lanzar.subprocess.Popen",
+                side_effect=processes,
+            ) as popen,
+            patch("scripts.lanzar.stop_processes"),
+        ):
+            self.assertEqual(main(), 1)
+
+        find_jupyter.assert_called_once_with(book_root)
+        command = popen.call_args_list[1].args[0]
+        self.assertEqual(command[0], str(project_jupyter))
+        self.assertIn(f"--ServerApp.root_dir={vault_root}", command)
 
     def test_wait_for_port_observes_a_listening_local_socket(self) -> None:
         with socket.socket() as listener:
