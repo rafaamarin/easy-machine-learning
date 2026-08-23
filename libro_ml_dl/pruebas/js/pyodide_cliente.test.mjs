@@ -196,3 +196,53 @@ test("recreates its worker after cancellation before accepting another run", asy
   assert.equal(workers.length, 2);
   assert.equal(workers[0].terminated, true);
 });
+
+test("invalidates a failed worker before notifying subscribers", async () => {
+  const workers = [];
+  const session = new PyodideSession({
+    worker_factory: () => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      return worker;
+    },
+    worker_url: "worker.mjs",
+  });
+  let retry;
+  session.subscribe((message) => {
+    if (message.type === "error") {
+      retry = session.run("retry", "2 + 2", []);
+    }
+  });
+
+  const first = session.run("first", "1 + 1", []);
+  workers[0].emit_error("bootstrap failure");
+
+  await assert.rejects(first, /bootstrap failure/);
+  assert.equal(workers[0].terminated, true);
+  assert.equal(workers.length, 2);
+  const request_id = workers[1].messages[0].request_id;
+  workers[1].emit({
+    type: "result",
+    request_id,
+    lab_id: "retry",
+    payload: { value: "4" },
+  });
+  assert.deepEqual(await retry, { value: "4" });
+});
+
+test("listener exceptions cannot prevent failed-worker cleanup", async () => {
+  const worker = new FakeWorker();
+  const session = new PyodideSession({
+    worker_factory: () => worker,
+    worker_url: "worker.mjs",
+  });
+  session.subscribe(() => {
+    throw new Error("listener failure");
+  });
+
+  const pending = session.run("demo", "1 + 1", []);
+  assert.throws(() => worker.emit_error("bootstrap failure"), /listener failure/);
+  await assert.rejects(pending, /bootstrap failure/);
+  assert.equal(worker.terminated, true);
+  assert.equal(session.worker, null);
+});

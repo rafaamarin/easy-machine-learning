@@ -1,5 +1,5 @@
 import { create_progress_store } from "./progreso.mjs";
-import { validate_jupyter_url } from "./jupyter_url.mjs";
+import { consume_jupyter_url } from "./jupyter_url.mjs";
 import { mount_labs } from "./laboratorios.mjs";
 
 const theme_key = "libro_ml_dl_theme_v1";
@@ -17,26 +17,25 @@ theme_button?.addEventListener("click", () => {
   localStorage.setItem(theme_key, next_theme);
 });
 
-const query = new URLSearchParams(window.location.search);
-const jupyter_url = query.get("jupyter_url");
-if (jupyter_url) {
-  const valid_jupyter_url = validate_jupyter_url(jupyter_url);
-  if (valid_jupyter_url) {
-    sessionStorage.setItem("libro_ml_dl_jupyter_url", valid_jupyter_url);
-  } else {
-    sessionStorage.removeItem("libro_ml_dl_jupyter_url");
-  }
+const jupyter_selection = consume_jupyter_url(
+  window.location.search,
+  sessionStorage.getItem("libro_ml_dl_jupyter_url"),
+);
+if (jupyter_selection.value) {
+  sessionStorage.setItem(
+    "libro_ml_dl_jupyter_url",
+    jupyter_selection.value,
+  );
+} else {
+  sessionStorage.removeItem("libro_ml_dl_jupyter_url");
+}
+if (jupyter_selection.clean_query) {
   history.replaceState({}, "", window.location.pathname + window.location.hash);
 }
 
-const current_jupyter_url = sessionStorage.getItem("libro_ml_dl_jupyter_url");
 const jupyter_link = document.querySelector("[data-jupyter-link]");
-const valid_jupyter_url = validate_jupyter_url(current_jupyter_url);
-if (!valid_jupyter_url) {
-  sessionStorage.removeItem("libro_ml_dl_jupyter_url");
-}
-if (valid_jupyter_url && jupyter_link instanceof HTMLAnchorElement) {
-  jupyter_link.href = valid_jupyter_url;
+if (jupyter_selection.value && jupyter_link instanceof HTMLAnchorElement) {
+  jupyter_link.href = jupyter_selection.value;
   jupyter_link.hidden = false;
 }
 

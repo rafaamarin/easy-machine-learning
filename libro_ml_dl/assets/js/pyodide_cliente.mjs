@@ -21,9 +21,12 @@ export class PyodideSession {
     worker.addEventListener("error", (event) => {
       if (worker !== this.worker) return;
       const message = event.message || "No se pudo iniciar Pyodide";
-      const lab_id = this.pending?.lab_id ?? "";
-      if (this.pending) this.pending.reject(new Error(message));
+      const failed_pending = this.pending;
+      const lab_id = failed_pending?.lab_id ?? "";
       this.pending = null;
+      this.worker = null;
+      worker.terminate();
+      if (failed_pending) failed_pending.reject(new Error(message));
       for (const listener of this.listeners) {
         listener({
           type: "error",
@@ -32,8 +35,6 @@ export class PyodideSession {
           payload: { message, traceback: "" },
         });
       }
-      this.worker = null;
-      worker.terminate();
     });
     return worker;
   }

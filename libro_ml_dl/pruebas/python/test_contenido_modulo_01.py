@@ -6,6 +6,7 @@ import warnings
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import numpy as np
 
@@ -144,6 +145,31 @@ class LearningSourceValidationTests(unittest.TestCase):
         self.assertTrue(
             any("falta salida estática para lab" in error for error in errors)
         )
+
+    def test_skips_pedagogical_read_for_source_outside_book(self) -> None:
+        manifest = {
+            "modules": [
+                {
+                    "id": "escaped",
+                    "status": "disponible",
+                    "source": "../outside.md",
+                }
+            ]
+        }
+        with TemporaryDirectory() as temporary_directory:
+            book_root = Path(temporary_directory) / "libro_ml_dl"
+            book_root.mkdir()
+            with patch.object(
+                validar_contenido,
+                "validate_learning_source",
+                side_effect=AssertionError("unsafe read"),
+            ) as validator:
+                errors = validar_contenido.validate_available_learning_sources(
+                    manifest,
+                    book_root,
+                )
+        self.assertEqual(errors, [])
+        validator.assert_not_called()
 
     def test_validator_loads_when_executed_as_a_direct_file(self) -> None:
         script_path = BOOK_ROOT / "scripts" / "validar_contenido.py"

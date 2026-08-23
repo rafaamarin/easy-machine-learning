@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validate_jupyter_url } from "../../assets/js/jupyter_url.mjs";
+import {
+  consume_jupyter_url,
+  validate_jupyter_url,
+} from "../../assets/js/jupyter_url.mjs";
 
 test("accepts only explicit loopback HTTP Jupyter URLs", () => {
   assert.equal(
@@ -20,4 +23,24 @@ test("rejects unsafe or ambiguous Jupyter URLs", () => {
   ]) {
     assert.equal(validate_jupyter_url(value), null, value);
   }
+});
+
+test("an explicitly empty query clears the stored Jupyter URL", () => {
+  assert.deepEqual(
+    consume_jupyter_url(
+      "?jupyter_url=",
+      "http://127.0.0.1:8888/lab?token=old",
+    ),
+    { value: null, clean_query: true },
+  );
+});
+
+test("an absent query reuses only a valid stored Jupyter URL", () => {
+  assert.deepEqual(
+    consume_jupyter_url("", "http://127.0.0.1:8888/lab?token=stored"),
+    {
+      value: "http://127.0.0.1:8888/lab?token=stored",
+      clean_query: false,
+    },
+  );
 });

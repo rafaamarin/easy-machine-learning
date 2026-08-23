@@ -8,6 +8,7 @@ if __package__:
     from scripts.construir_contenido import LAB_PATTERN
     from scripts.modelo_contenido import (
         load_manifest,
+        resolve_book_path,
         resolve_vault_root,
         validate_manifest,
         validate_source_map,
@@ -16,6 +17,7 @@ else:
     from construir_contenido import LAB_PATTERN
     from modelo_contenido import (
         load_manifest,
+        resolve_book_path,
         resolve_vault_root,
         validate_manifest,
         validate_source_map,
@@ -65,6 +67,36 @@ def validate_learning_source(
     return errors
 
 
+def validate_available_learning_sources(
+    manifest: dict[str, object],
+    book_root: Path,
+) -> list[str]:
+    errors: list[str] = []
+    modules = manifest.get("modules", [])
+    if not isinstance(modules, list):
+        return errors
+    for module in modules:
+        if not isinstance(module, dict) or module.get("status") != "disponible":
+            continue
+        source = module.get("source")
+        if not isinstance(source, str):
+            continue
+        try:
+            source_path = resolve_book_path(book_root, source)
+        except ValueError:
+            continue
+        module_id = module.get("id")
+        required_markers = (
+            PEDAGOGICAL_MARKERS
+            if module_id == "01_datos_y_formas"
+            else {"reto", "observa", "modifica", "comprueba"}
+        )
+        errors.extend(
+            validate_learning_source(source_path, required_markers, book_root)
+        )
+    return errors
+
+
 def main() -> int:
     book_root = Path(__file__).resolve().parents[1]
     vault_root = resolve_vault_root(book_root)
@@ -75,17 +107,7 @@ def main() -> int:
         *validate_manifest(manifest, book_root),
         *validate_source_map(source_map, manifest, vault_root),
     ]
-    for module in manifest["modules"]:
-        if module["status"] != "disponible":
-            continue
-        source_path = book_root / str(module["source"])
-        if module["id"] == "01_datos_y_formas":
-            required_markers = PEDAGOGICAL_MARKERS
-        else:
-            required_markers = {"reto", "observa", "modifica", "comprueba"}
-        errors.extend(
-            validate_learning_source(source_path, required_markers, book_root)
-        )
+    errors.extend(validate_available_learning_sources(manifest, book_root))
     if errors:
         for error in errors:
             print(f"ERROR: {error}")

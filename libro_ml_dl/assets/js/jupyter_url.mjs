@@ -19,3 +19,17 @@ export function validate_jupyter_url(value) {
     return null;
   }
 }
+
+export function consume_jupyter_url(search, stored_value) {
+  const query = new URLSearchParams(search);
+  if (query.has("jupyter_url")) {
+    return {
+      value: validate_jupyter_url(query.get("jupyter_url")),
+      clean_query: true,
+    };
+  }
+  return {
+    value: validate_jupyter_url(stored_value),
+    clean_query: false,
+  };
+}
