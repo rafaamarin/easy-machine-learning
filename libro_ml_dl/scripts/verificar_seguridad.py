@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-import os
+import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 BOOK_ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +40,20 @@ class SecretFinding:
     detector_type: str
 
 
+@dataclass(frozen=True, order=True)
+class HistoricalFinding:
+    commit: str
+    path: str
+    line_number: int
+    detector_type: str
+
+
+class HistoricalScanError(RuntimeError):
+    def __init__(self, findings: list[HistoricalFinding]) -> None:
+        self.findings = sorted(findings)
+        super().__init__("hallazgos históricos no adjudicados")
+
+
 def parse_secret_results(payload: dict[str, Any]) -> list[SecretFinding]:
     findings: list[SecretFinding] = []
     for path, entries in payload.get("results", {}).items():
@@ -55,9 +70,25 @@ def parse_secret_results(payload: dict[str, Any]) -> list[SecretFinding]:
 
 def render_secret_findings(findings: list[SecretFinding]) -> list[str]:
     return [
-        f"{finding.path}:{finding.line_number} [{finding.detector_type}]"
+        f"{_escape_metadata(finding.path)}:{finding.line_number} "
+        f"[{_escape_metadata(finding.detector_type)}]"
         for finding in findings
     ]
+
+
+def render_historical_findings(
+    findings: list[HistoricalFinding],
+) -> list[str]:
+    return [
+        f"{_escape_metadata(finding.commit)} "
+        f"{_escape_metadata(finding.path)}:{finding.line_number} "
+        f"[{_escape_metadata(finding.detector_type)}]"
+        for finding in findings
+    ]
+
+
+def _escape_metadata(value: str) -> str:
+    return json.dumps(value, ensure_ascii=True)[1:-1]
 
 
 def _normalize_secret_paths(
@@ -92,6 +123,8 @@ def _normalize_secret_paths(
 
 def _is_excluded_candidate(path: Path, repo_root: Path) -> bool:
     relative_path = path.relative_to(repo_root)
+    if path.is_symlink():
+        raise RuntimeError("el inventario contiene un enlace simbólico")
     return (
         not path.is_file()
         or any(part in EXCLUDED_DIRECTORIES for part in relative_path.parts)
@@ -117,11 +150,17 @@ def _candidate_files(repo_root: Path) -> list[Path]:
     except OSError:
         completed = None
     if completed is not None and completed.returncode == 0:
-        paths = sorted(
-            repo_root / os.fsdecode(relative_path)
-            for relative_path in completed.stdout.split(b"\0")
-            if relative_path
-        )
+        try:
+            relative_paths = [
+                relative_path.decode("utf-8")
+                for relative_path in completed.stdout.split(b"\0")
+                if relative_path
+            ]
+        except UnicodeDecodeError as error:
+            raise RuntimeError(
+                "el inventario contiene un nombre que no es UTF-8"
+            ) from error
+        paths = sorted(repo_root / path for path in relative_paths)
     else:
         if repo_root.joinpath(".git").exists():
             raise RuntimeError("no se pudo obtener el inventario de Git")
@@ -129,16 +168,29 @@ def _candidate_files(repo_root: Path) -> list[Path]:
     return [path for path in paths if not _is_excluded_candidate(path, repo_root)]
 
 
-def find_personal_paths(repo_root: Path) -> list[Path]:
-    matches: list[Path] = []
+def _find_personal_path_findings(repo_root: Path) -> list[SecretFinding]:
+    findings: list[SecretFinding] = []
     for path in _candidate_files(repo_root):
         try:
             source = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if any(marker in source for marker in PERSONAL_PATH_MARKERS):
-            matches.append(path)
-    return matches
+        relative_path = path.relative_to(repo_root).as_posix()
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            if any(marker in line for marker in PERSONAL_PATH_MARKERS):
+                findings.append(
+                    SecretFinding(relative_path, line_number, "Ruta personal")
+                )
+    return sorted(findings)
+
+
+def find_personal_paths(repo_root: Path) -> list[Path]:
+    return sorted(
+        {
+            repo_root / finding.path
+            for finding in _find_personal_path_findings(repo_root)
+        }
+    )
 
 
 def run_secret_scan(repo_root: Path) -> list[SecretFinding]:
@@ -167,6 +219,116 @@ def run_secret_scan(repo_root: Path) -> list[SecretFinding]:
         )
         findings.extend(parse_secret_results(json.loads(completed.stdout)))
     return _normalize_secret_paths(findings, repo_root)
+
+
+def _is_adjudicated_checksum(
+    snapshot_root: Path,
+    finding: SecretFinding,
+) -> bool:
+    if finding.detector_type != "Hex High Entropy String":
+        return False
+    known_location = (finding.path, finding.line_number)
+    if known_location not in {
+        ("libro_ml_dl/scripts/preparar_entorno.py", 17),
+        ("libro_ml_dl/pruebas/python/test_preparar_entorno.py", 81),
+    }:
+        return False
+    try:
+        source_lines = (
+            snapshot_root.joinpath(finding.path)
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+        target_line = source_lines[finding.line_number - 1]
+    except (IndexError, OSError, UnicodeDecodeError):
+        return False
+    if re.search(r"[0-9a-fA-F]{64}", target_line) is None:
+        return False
+    if known_location[0].endswith("scripts/preparar_entorno.py"):
+        return "CORE_SHA256" in target_line
+    context_start = max(0, finding.line_number - 8)
+    context = "\n".join(source_lines[context_start : finding.line_number])
+    return "test_sha256_file_uses_file_bytes" in context and (
+        "sha256_file(path)" in context
+    )
+
+
+def _validated_archive_members(
+    archive: tarfile.TarFile,
+) -> list[tarfile.TarInfo]:
+    members = archive.getmembers()
+    for member in members:
+        member_path = PurePosixPath(member.name)
+        try:
+            member.name.encode("utf-8", errors="strict")
+        except UnicodeEncodeError as error:
+            raise RuntimeError(
+                "el historial contiene un nombre que no es UTF-8"
+            ) from error
+        if member_path.is_absolute() or ".." in member_path.parts:
+            raise RuntimeError("git archive devolvió una ruta insegura")
+        if member.issym() or member.islnk():
+            raise RuntimeError("el historial contiene un enlace simbólico")
+        if not (member.isfile() or member.isdir()):
+            raise RuntimeError("git archive devolvió un tipo no permitido")
+    return members
+
+
+def _git_commits(repo_root: Path) -> list[str]:
+    completed = subprocess.run(
+        ["git", "rev-list", "--all"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+    )
+    try:
+        commits = completed.stdout.decode("ascii", errors="strict").splitlines()
+    except UnicodeDecodeError as error:
+        raise RuntimeError("Git devolvió identificadores no válidos") from error
+    if not commits or any(
+        re.fullmatch(r"[0-9a-f]{40,64}", commit) is None for commit in commits
+    ):
+        raise RuntimeError("Git devolvió un historial no válido")
+    return commits
+
+
+def scan_git_history(repo_root: Path) -> list[HistoricalFinding]:
+    adjudicated: list[HistoricalFinding] = []
+    rejected: list[HistoricalFinding] = []
+    for commit in _git_commits(repo_root):
+        with tempfile.TemporaryDirectory(prefix="easy_ml_history_") as directory:
+            temporary_root = Path(directory)
+            archive_path = temporary_root / "tree.tar"
+            snapshot_root = temporary_root / "snapshot"
+            snapshot_root.mkdir()
+            with archive_path.open("wb") as output:
+                subprocess.run(
+                    ["git", "archive", "--format=tar", commit],
+                    cwd=repo_root,
+                    check=True,
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                )
+            with tarfile.open(archive_path, mode="r:") as archive:
+                members = _validated_archive_members(archive)
+                archive.extractall(snapshot_root, members=members)
+
+            secret_findings = run_secret_scan(snapshot_root)
+            personal_findings = _find_personal_path_findings(snapshot_root)
+            for finding in [*secret_findings, *personal_findings]:
+                historical_finding = HistoricalFinding(
+                    commit=commit,
+                    path=finding.path,
+                    line_number=finding.line_number,
+                    detector_type=finding.detector_type,
+                )
+                if _is_adjudicated_checksum(snapshot_root, finding):
+                    adjudicated.append(historical_finding)
+                else:
+                    rejected.append(historical_finding)
+    if rejected:
+        raise HistoricalScanError(rejected)
+    return sorted(adjudicated)
 
 
 def run_dependency_audit(book_root: Path) -> None:
@@ -221,6 +383,15 @@ def main() -> int:
     except Exception:
         print("ERROR_SEGURIDAD: RUTAS_PERSONALES", file=sys.stderr)
         return 2
+    try:
+        historical_findings = scan_git_history(REPO_ROOT)
+    except HistoricalScanError as error:
+        for line in render_historical_findings(error.findings):
+            print(f"HALLAZGO_HISTORICO: {line}", file=sys.stderr)
+        return 1
+    except Exception:
+        print("ERROR_SEGURIDAD: HISTORIAL_GIT", file=sys.stderr)
+        return 2
     if findings:
         for line in render_secret_findings(findings):
             print(f"POTENCIAL_SECRETO: {line}", file=sys.stderr)
@@ -232,6 +403,8 @@ def main() -> int:
             )
     if findings or personal_paths:
         return 1
+    for line in render_historical_findings(historical_findings):
+        print(f"CHECKSUM_HISTORICO_ADJUDICADO: {line}")
     try:
         run_dependency_audit(BOOK_ROOT)
     except Exception:

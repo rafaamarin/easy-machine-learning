@@ -10,13 +10,19 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from scripts.verificar_seguridad import (
+    HistoricalFinding,
+    HistoricalScanError,
+    SecretFinding,
     _candidate_files,
+    _is_adjudicated_checksum,
     find_personal_paths,
     main,
     parse_secret_results,
+    render_historical_findings,
     render_secret_findings,
     run_dependency_audit,
     run_secret_scan,
+    scan_git_history,
 )
 
 
@@ -275,6 +281,153 @@ class SecurityVerificationTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(RuntimeError, "inventario de Git"):
                     _candidate_files(repo_root)
+
+    def test_git_candidate_inventory_rejects_non_utf8_filenames(self) -> None:
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            repo_root.joinpath(".git").mkdir()
+            inventory = subprocess.CompletedProcess(
+                ["git", "ls-files"],
+                0,
+                stdout=b"invalid-\xff-name\0",
+                stderr=b"",
+            )
+            with patch(
+                "scripts.verificar_seguridad.subprocess.run",
+                return_value=inventory,
+            ):
+                with self.assertRaisesRegex(RuntimeError, "UTF-8"):
+                    _candidate_files(repo_root)
+
+    def test_git_candidate_inventory_rejects_symlinks(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo_root = root / "repo"
+            repo_root.mkdir()
+            external_file = root / "external.txt"
+            external_file.write_text("ordinary text", encoding="utf-8")
+            subprocess.run(["git", "init", "--quiet"], cwd=repo_root, check=True)
+            repo_root.joinpath("linked.txt").symlink_to(external_file)
+            subprocess.run(
+                ["git", "add", "linked.txt"],
+                cwd=repo_root,
+                check=True,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "enlace simbólico"):
+                _candidate_files(repo_root)
+
+    def test_redacted_rendering_escapes_filename_controls(self) -> None:
+        report = render_secret_findings(
+            [SecretFinding("unsafe\nname.py", 3, "Detector\rName")]
+        )
+        self.assertEqual(report, ["unsafe\\nname.py:3 [Detector\\rName]"])
+
+    def test_checksum_adjudication_requires_detector_and_context(self) -> None:
+        with TemporaryDirectory() as directory:
+            snapshot_root = Path(directory)
+            source_path = snapshot_root / "libro_ml_dl/scripts/preparar_entorno.py"
+            source_path.parent.mkdir(parents=True)
+            lines = ["" for _ in range(16)]
+            lines.append('NOT_A_CHECKSUM = "' + "ab" * 32 + '"')
+            source_path.write_text("\n".join(lines), encoding="utf-8")
+            finding = SecretFinding(
+                "libro_ml_dl/scripts/preparar_entorno.py",
+                17,
+                "Hex High Entropy String",
+            )
+            wrong_detector = SecretFinding(
+                finding.path,
+                finding.line_number,
+                "Secret Keyword",
+            )
+
+            self.assertFalse(_is_adjudicated_checksum(snapshot_root, finding))
+            self.assertFalse(_is_adjudicated_checksum(snapshot_root, wrong_detector))
+
+    def test_history_scan_fails_redacted_for_credential_fixture(self) -> None:
+        candidate = "".join(("synthetic", "-private-", "material-", "A" * 32))
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            subprocess.run(["git", "init", "--quiet"], cwd=repo_root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "audit@example.invalid"],
+                cwd=repo_root,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Audit Fixture"],
+                cwd=repo_root,
+                check=True,
+            )
+            repo_root.joinpath("README.md").write_text(
+                "benign fixture\n",
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=repo_root, check=True)
+            subprocess.run(
+                ["git", "commit", "--quiet", "-m", "benign"],
+                cwd=repo_root,
+                check=True,
+            )
+            repo_root.joinpath("fixture.py").write_text(
+                f'api_key = "{candidate}"\n',
+                encoding="utf-8",
+            )
+            subprocess.run(["git", "add", "."], cwd=repo_root, check=True)
+            subprocess.run(
+                ["git", "commit", "--quiet", "-m", "credential fixture"],
+                cwd=repo_root,
+                check=True,
+            )
+
+            with self.assertRaises(HistoricalScanError) as raised:
+                scan_git_history(repo_root)
+
+        report = "\n".join(render_historical_findings(raised.exception.findings))
+        self.assertIn("fixture.py:1", report)
+        self.assertNotIn(candidate, report)
+
+    def test_historical_rendering_contains_only_escaped_metadata(self) -> None:
+        finding = HistoricalFinding(
+            commit="abc\nspoof",
+            path="unsafe\nname.py",
+            line_number=5,
+            detector_type="Detector\rName",
+        )
+        self.assertEqual(
+            render_historical_findings([finding]),
+            ["abc\\nspoof unsafe\\nname.py:5 [Detector\\rName]"],
+        )
+
+    def test_main_reports_history_tool_failure_categorically(self) -> None:
+        sensitive_material = "".join(("synthetic", "-private-", "material"))
+        failure = subprocess.CalledProcessError(
+            returncode=1,
+            cmd=["git", "archive"],
+            stderr=sensitive_material,
+        )
+        stdout = StringIO()
+        stderr = StringIO()
+        with (
+            patch("scripts.verificar_seguridad.run_secret_scan", return_value=[]),
+            patch("scripts.verificar_seguridad.find_personal_paths", return_value=[]),
+            patch(
+                "scripts.verificar_seguridad.scan_git_history",
+                side_effect=failure,
+            ),
+            patch("scripts.verificar_seguridad.run_dependency_audit") as audit,
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
+            result = main()
+
+        rendered = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(result, 2)
+        self.assertEqual(stderr.getvalue(), "ERROR_SEGURIDAD: HISTORIAL_GIT\n")
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertNotIn(sensitive_material, rendered)
+        audit.assert_not_called()
 
 
 if __name__ == "__main__":
