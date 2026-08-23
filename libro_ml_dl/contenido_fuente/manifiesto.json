@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "content_version": "0.1.0",
+  "modules": [
+    {"id": "00_inicio", "number": "00", "title": "Inicio y mapa", "status": "disponible", "duration_minutes": 10, "prerequisites": [], "execution_mode": "pyodide", "source": "contenido_fuente/00_inicio/index.md", "output": "index.html", "sections": ["como_usar", "primer_experimento", "ruta"]},
+    {"id": "01_datos_y_formas", "number": "01", "title": "Datos, formas y señales", "status": "disponible", "duration_minutes": 45, "prerequisites": ["00_inicio"], "execution_mode": "pyodide", "source": "contenido_fuente/01_datos_y_formas/index.md", "output": "contenido/01_datos_y_formas/index.html", "sections": ["forma", "centro_dispersion", "escala", "miniinspector", "checklist"]},
+    {"id": "02_recta_que_aprende", "number": "02", "title": "Una recta que aprende", "status": "planificado", "duration_minutes": 60, "prerequisites": ["01_datos_y_formas"], "execution_mode": "pyodide", "source": null, "output": null, "sections": []},
+    {"id": "03_decidir_con_probabilidades", "number": "03", "title": "Decidir con probabilidades", "status": "planificado", "duration_minutes": 60, "prerequisites": ["02_recta_que_aprende"], "execution_mode": "pyodide", "source": null, "output": null, "sections": []},
+    {"id": "04_datos_sin_trampas", "number": "04", "title": "Datos listos sin trampas", "status": "planificado", "duration_minutes": 75, "prerequisites": ["03_decidir_con_probabilidades"], "execution_mode": "pyodide", "source": null, "output": null, "sections": []},
+    {"id": "05_encontrar_estructura", "number": "05", "title": "Encontrar estructura", "status": "planificado", "duration_minutes": 60, "prerequisites": ["04_datos_sin_trampas"], "execution_mode": "pyodide", "source": null, "output": null, "sections": []},
+    {"id": "06_neurona_desde_cero", "number": "06", "title": "Una neurona desde cero", "status": "planificado", "duration_minutes": 75, "prerequisites": ["05_encontrar_estructura"], "execution_mode": "pyodide", "source": null, "output": null, "sections": []},
+    {"id": "07_de_neurona_a_mlp", "number": "07", "title": "De neurona a MLP", "status": "planificado", "duration_minutes": 90, "prerequisites": ["06_neurona_desde_cero"], "execution_mode": "mixto", "source": null, "output": null, "sections": []},
+    {"id": "08_entrenar_sin_adivinar", "number": "08", "title": "Entrenar sin adivinar", "status": "planificado", "duration_minutes": 90, "prerequisites": ["07_de_neurona_a_mlp"], "execution_mode": "jupyter", "source": null, "output": null, "sections": []},
+    {"id": "09_vision_clasica", "number": "09", "title": "Visión clásica", "status": "planificado", "duration_minutes": 75, "prerequisites": ["08_entrenar_sin_adivinar"], "execution_mode": "mixto", "source": null, "output": null, "sections": []},
+    {"id": "10_cnn_practica", "number": "10", "title": "CNN práctica", "status": "planificado", "duration_minutes": 90, "prerequisites": ["09_vision_clasica"], "execution_mode": "jupyter", "source": null, "output": null, "sections": []},
+    {"id": "11_vision_moderna", "number": "11", "title": "Visión moderna", "status": "planificado", "duration_minutes": 90, "prerequisites": ["10_cnn_practica"], "execution_mode": "jupyter", "source": null, "output": null, "sections": []},
+    {"id": "12_embeddings_a_transformers", "number": "12", "title": "De embeddings a transformers", "status": "planificado", "duration_minutes": 105, "prerequisites": ["11_vision_moderna"], "execution_mode": "mixto", "source": null, "output": null, "sections": []},
+    {"id": "13_ingenieria_ml", "number": "13", "title": "Ingeniería de ML", "status": "planificado", "duration_minutes": 120, "prerequisites": ["12_embeddings_a_transformers"], "execution_mode": "jupyter", "source": null, "output": null, "sections": []},
+    {"id": "14_proyectos_integradores", "number": "14", "title": "Proyectos integradores", "status": "planificado", "duration_minutes": 300, "prerequisites": ["13_ingenieria_ml"], "execution_mode": "jupyter", "source": null, "output": null, "sections": []},
+    {"id": "a_glosario_apendices", "number": "A", "title": "Glosario y apéndices", "status": "planificado", "duration_minutes": 30, "prerequisites": [], "execution_mode": "ninguno", "source": null, "output": null, "sections": []}
+  ]
+}

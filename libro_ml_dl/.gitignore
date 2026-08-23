@@ -1,0 +1,6 @@
+.venv/
+configuracion/local.json
+assets/vendor/pyodide/*
+!assets/vendor/pyodide/.gitkeep
+__pycache__/
+*.pyc

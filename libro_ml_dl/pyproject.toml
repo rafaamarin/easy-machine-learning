@@ -1,0 +1,27 @@
+[project]
+name = "libro-ml-dl"
+version = "0.1.0"
+description = "Libro local e interactivo de Machine Learning y Deep Learning"
+requires-python = ">=3.11"
+dependencies = [
+    "Markdown==3.10.3",
+]
+
+[dependency-groups]
+validation = [
+    "matplotlib==3.10.8",
+    "numpy==2.4.6",
+    "pandas==3.0.2",
+    "ruff==0.16.4",
+    "scikit-learn==1.8.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

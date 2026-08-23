@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="$page_description">
+  <title>$page_title · ML/DL haciendo</title>
+  <link rel="stylesheet" href="$asset_prefix/assets/css/estilos.css">
+  <script type="module" src="$asset_prefix/assets/js/app.mjs"></script>
+</head>
+<body data-module-id="$module_id" data-content-version="$content_version">
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+  <header class="site-header">
+    <a class="brand" href="$home_href">ML/DL haciendo</a>
+    <div class="header-actions">
+      <a data-resume-link hidden>Retomar</a>
+      <a data-jupyter-link hidden>JupyterLab</a>
+      <button type="button" data-theme-toggle aria-label="Cambiar tema">◐</button>
+    </div>
+  </header>
+  <div class="book-layout">
+    <nav class="module-nav" aria-label="Módulos del libro">
+      $module_navigation
+    </nav>
+    <main id="contenido" tabindex="-1">
+      $content_html
+    </main>
+  </div>
+  <footer>
+    <p>Contenido local · versión $content_version</p>
+  </footer>
+  <!-- source_sha256: $source_sha256 -->
+</body>
+</html>

@@ -1,0 +1,9 @@
+.DS_Store
+**/.DS_Store
+**/.venv/
+**/.ruff_cache/
+**/__pycache__/
+**/*.pyc
+libro_ml_dl/configuracion/local.json
+libro_ml_dl/assets/vendor/pyodide/*
+!libro_ml_dl/assets/vendor/pyodide/.gitkeep

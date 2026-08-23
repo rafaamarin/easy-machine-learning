@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Módulo 00: Inicio y mapa">
+  <title>Inicio y mapa · ML/DL haciendo</title>
+  <link rel="stylesheet" href="./assets/css/estilos.css">
+  <script type="module" src="./assets/js/app.mjs"></script>
+</head>
+<body data-module-id="00_inicio" data-content-version="0.1.0">
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+  <header class="site-header">
+    <a class="brand" href="index.html">ML/DL haciendo</a>
+    <div class="header-actions">
+      <a data-resume-link hidden>Retomar</a>
+      <a data-jupyter-link hidden>JupyterLab</a>
+      <button type="button" data-theme-toggle aria-label="Cambiar tema">◐</button>
+    </div>
+  </header>
+  <div class="book-layout">
+    <nav class="module-nav" aria-label="Módulos del libro">
+      <ol><li><a href="index.html">00. Inicio y mapa</a></li><li><a href="contenido/01_datos_y_formas/index.html">01. Datos, formas y señales</a></li><li><span aria-disabled="true">02. Una recta que aprende · próximamente</span></li><li><span aria-disabled="true">03. Decidir con probabilidades · próximamente</span></li><li><span aria-disabled="true">04. Datos listos sin trampas · próximamente</span></li><li><span aria-disabled="true">05. Encontrar estructura · próximamente</span></li><li><span aria-disabled="true">06. Una neurona desde cero · próximamente</span></li><li><span aria-disabled="true">07. De neurona a MLP · próximamente</span></li><li><span aria-disabled="true">08. Entrenar sin adivinar · próximamente</span></li><li><span aria-disabled="true">09. Visión clásica · próximamente</span></li><li><span aria-disabled="true">10. CNN práctica · próximamente</span></li><li><span aria-disabled="true">11. Visión moderna · próximamente</span></li><li><span aria-disabled="true">12. De embeddings a transformers · próximamente</span></li><li><span aria-disabled="true">13. Ingeniería de ML · próximamente</span></li><li><span aria-disabled="true">14. Proyectos integradores · próximamente</span></li><li><span aria-disabled="true">A. Glosario y apéndices · próximamente</span></li></ol>
+    </nav>
+    <main id="contenido" tabindex="-1">
+      <h1>Machine Learning y Deep Learning haciendo</h1>
+<p>Construye. Ejecuta. Cambia una cosa. Mira qué ocurre.</p>
+<h2 id="como_usar">Cómo usar esta guía</h2>
+<ol>
+<li>Lee el reto.</li>
+<li>Predice el resultado.</li>
+<li>Ejecuta el código.</li>
+<li>Modifica un valor.</li>
+<li>Marca la comprobación cuando puedas explicarlo.</li>
+</ol>
+<p>El navegador resuelve experimentos breves. TensorFlow y PyTorch se abrirán en JupyterLab cuando el recorrido necesite Python nativo.</p>
+<blockquote>
+<p>No memorices la salida. Provócala y explica por qué cambió.</p>
+</blockquote>
+<p><label>
+  <input type="checkbox" data-progress-id="00_inicio:como_usar">
+  Puedo explicar el ciclo: predecir → ejecutar → modificar → interpretar.
+</label></p>
+<progress class="progress-meter" data-progress-meter aria-label="Progreso del módulo" value="0" max="2"></progress>
+<output data-progress-text>0 de 2</output>
+
+<h2 data-pedagogy="reto" id="primer_experimento">Reto: ¿hay mejora?</h2>
+<p>Cinco tiempos representan cinco sesiones de 5 km. Antes de ejecutar: ¿cuántos minutos separan la primera y la última sesión?</p>
+<section class="python-lab" data-python-lab="00_primer_experimento" data-packages="numpy"><header><h3>Mide una mejora</h3><span data-lab-status aria-live="polite">Sin ejecutar</span></header><textarea data-lab-code spellcheck="false" aria-label="Código Python de Mide una mejora">import numpy as np
+
+tiempos_min = np.array([32, 31, 30, 29, 28], dtype=float)
+mejora_min = float(tiempos_min[0] - tiempos_min[-1])
+
+print(f&quot;Sesiones: {tiempos_min.size}&quot;)
+print(f&quot;Primer 5 km: {tiempos_min[0]:.0f} min&quot;)
+print(f&quot;Último 5 km: {tiempos_min[-1]:.0f} min&quot;)
+print(f&quot;Mejora observada: {mejora_min:.0f} min&quot;)
+</textarea><div class="lab-actions"><button type="button" data-run>Ejecutar</button><button type="button" data-cancel disabled>Cancelar</button><button type="button" data-reset>Reiniciar</button></div><pre data-lab-output aria-live="polite"></pre><div data-lab-figures></div></section>
+
+<details data-static-output-for="00_primer_experimento">
+<summary>Salida de referencia si Python no carga</summary>
+<pre><code class="language-text">Sesiones: 5
+Primer 5 km: 32 min
+Último 5 km: 28 min
+Mejora observada: 4 min
+</code></pre>
+</details>
+<h3 data-pedagogy="observa">Observa</h3>
+<p>La resta cuantifica el cambio. Todavía no demuestra que el entrenamiento lo causó. Solo describe estos cinco registros.</p>
+<h3 data-pedagogy="modifica">Modifica</h3>
+<p>Cambia el último <code>28</code> por <code>33</code>. Ejecuta otra vez. Explica por qué <code>mejora_min</code> pasa a ser negativo.</p>
+<details data-hint="data-hint">
+<summary>Pista</summary>
+<p>La operación siempre es <code>primer tiempo - último tiempo</code>.</p>
+</details>
+<details data-solution="data-solution">
+<summary>Solución razonada</summary>
+<p>Con <code>33</code>, la resta es <code>32 - 33 = -1</code>. El signo negativo indica que la última sesión tardó un minuto más; no hubo mejora en este indicador.</p>
+</details>
+<h3 data-pedagogy="comprueba">Comprueba</h3>
+<p><label>
+  <input type="checkbox" data-progress-id="00_inicio:primer_experimento">
+  Puedo cambiar un dato, predecir el signo y explicar el resultado.
+</label></p>
+<h2 id="ruta">Ruta completa</h2>
+<p>El índice lateral muestra el recorrido entero. Los módulos sin enlace aún no están construidos. Empieza por <strong>01. Datos, formas y señales</strong> cuando aparezca disponible.</p><section aria-labelledby="indice_completo"><h2 id="indice_completo">Índice completo</h2><div class="module-grid"><article class="module-card"><p class="module-status">Disponible</p><h3><a href="index.html">00. Inicio y mapa</a></h3><dl><div><dt>Duración</dt><dd>10 min</dd></div><div><dt>Prerequisitos</dt><dd>Ninguno</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Disponible</p><h3><a href="contenido/01_datos_y_formas/index.html">01. Datos, formas y señales</a></h3><dl><div><dt>Duración</dt><dd>45 min</dd></div><div><dt>Prerequisitos</dt><dd>Inicio y mapa</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>02. Una recta que aprende</h3><dl><div><dt>Duración</dt><dd>60 min</dd></div><div><dt>Prerequisitos</dt><dd>Datos, formas y señales</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>03. Decidir con probabilidades</h3><dl><div><dt>Duración</dt><dd>60 min</dd></div><div><dt>Prerequisitos</dt><dd>Una recta que aprende</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>04. Datos listos sin trampas</h3><dl><div><dt>Duración</dt><dd>75 min</dd></div><div><dt>Prerequisitos</dt><dd>Decidir con probabilidades</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>05. Encontrar estructura</h3><dl><div><dt>Duración</dt><dd>60 min</dd></div><div><dt>Prerequisitos</dt><dd>Datos listos sin trampas</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>06. Una neurona desde cero</h3><dl><div><dt>Duración</dt><dd>75 min</dd></div><div><dt>Prerequisitos</dt><dd>Encontrar estructura</dd></div><div><dt>Ejecución</dt><dd>pyodide</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>07. De neurona a MLP</h3><dl><div><dt>Duración</dt><dd>90 min</dd></div><div><dt>Prerequisitos</dt><dd>Una neurona desde cero</dd></div><div><dt>Ejecución</dt><dd>mixto</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>08. Entrenar sin adivinar</h3><dl><div><dt>Duración</dt><dd>90 min</dd></div><div><dt>Prerequisitos</dt><dd>De neurona a MLP</dd></div><div><dt>Ejecución</dt><dd>jupyter</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>09. Visión clásica</h3><dl><div><dt>Duración</dt><dd>75 min</dd></div><div><dt>Prerequisitos</dt><dd>Entrenar sin adivinar</dd></div><div><dt>Ejecución</dt><dd>mixto</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>10. CNN práctica</h3><dl><div><dt>Duración</dt><dd>90 min</dd></div><div><dt>Prerequisitos</dt><dd>Visión clásica</dd></div><div><dt>Ejecución</dt><dd>jupyter</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>11. Visión moderna</h3><dl><div><dt>Duración</dt><dd>90 min</dd></div><div><dt>Prerequisitos</dt><dd>CNN práctica</dd></div><div><dt>Ejecución</dt><dd>jupyter</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>12. De embeddings a transformers</h3><dl><div><dt>Duración</dt><dd>105 min</dd></div><div><dt>Prerequisitos</dt><dd>Visión moderna</dd></div><div><dt>Ejecución</dt><dd>mixto</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>13. Ingeniería de ML</h3><dl><div><dt>Duración</dt><dd>120 min</dd></div><div><dt>Prerequisitos</dt><dd>De embeddings a transformers</dd></div><div><dt>Ejecución</dt><dd>jupyter</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>14. Proyectos integradores</h3><dl><div><dt>Duración</dt><dd>300 min</dd></div><div><dt>Prerequisitos</dt><dd>Ingeniería de ML</dd></div><div><dt>Ejecución</dt><dd>jupyter</dd></div></dl></article><article class="module-card"><p class="module-status">Planificado</p><h3>A. Glosario y apéndices</h3><dl><div><dt>Duración</dt><dd>30 min</dd></div><div><dt>Prerequisitos</dt><dd>Ninguno</dd></div><div><dt>Ejecución</dt><dd>ninguno</dd></div></dl></article></div></section>
+    </main>
+  </div>
+  <footer>
+    <p>Contenido local · versión 0.1.0</p>
+  </footer>
+  <!-- source_sha256: 9b4801c570558a03a0ec0e4d9e7d2eb4766af92673250420ea862090a39f7db6 -->
+</body>
+</html>

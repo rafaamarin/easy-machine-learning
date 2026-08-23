@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "modules": {
+    "00_inicio": {
+      "sources": [],
+      "transformation": "Contenido nuevo: contrato de estudio y microexperimento NumPy sobre tiempos de 5 km."
+    },
+    "01_datos_y_formas": {
+      "sources": [
+        "material_fuente/notebooks/01-series-dataframes.ipynb",
+        "material_fuente/notebooks/07-estadisticas-basicas.ipynb",
+        "material_fuente/notebooks/05-scale.ipynb"
+      ],
+      "transformation": "Forma y ejes, estadística descriptiva y escalado reescritos como experimentos breves sobre entrenamientos de running."
+    }
+  }
+}
