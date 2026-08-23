@@ -29,6 +29,7 @@ PERSONAL_PATH_MARKERS = (
     f"/home/{PERSONAL_USER}/",
     f"C:\\Users\\{PERSONAL_USER}\\",
 )
+SECRET_SCAN_CHUNK_SIZE = 200
 
 
 @dataclass(frozen=True, order=True)
@@ -89,6 +90,15 @@ def _normalize_secret_paths(
     return sorted(normalized)
 
 
+def _is_excluded_candidate(path: Path, repo_root: Path) -> bool:
+    relative_path = path.relative_to(repo_root)
+    return (
+        not path.is_file()
+        or any(part in EXCLUDED_DIRECTORIES for part in relative_path.parts)
+        or relative_path.parts[:4] == ("libro_ml_dl", "assets", "vendor", "pyodide")
+    )
+
+
 def _candidate_files(repo_root: Path) -> list[Path]:
     try:
         completed = subprocess.run(
@@ -107,24 +117,21 @@ def _candidate_files(repo_root: Path) -> list[Path]:
     except OSError:
         completed = None
     if completed is not None and completed.returncode == 0:
-        return sorted(
+        paths = sorted(
             repo_root / os.fsdecode(relative_path)
             for relative_path in completed.stdout.split(b"\0")
             if relative_path
         )
-    return sorted(repo_root.rglob("*"))
+    else:
+        if repo_root.joinpath(".git").exists():
+            raise RuntimeError("no se pudo obtener el inventario de Git")
+        paths = sorted(repo_root.rglob("*"))
+    return [path for path in paths if not _is_excluded_candidate(path, repo_root)]
 
 
 def find_personal_paths(repo_root: Path) -> list[Path]:
     matches: list[Path] = []
     for path in _candidate_files(repo_root):
-        relative_path = path.relative_to(repo_root)
-        if (
-            not path.is_file()
-            or any(part in EXCLUDED_DIRECTORIES for part in relative_path.parts)
-            or relative_path.parts[:4] == ("libro_ml_dl", "assets", "vendor", "pyodide")
-        ):
-            continue
         try:
             source = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -138,21 +145,27 @@ def run_secret_scan(repo_root: Path) -> list[SecretFinding]:
     executable = shutil.which("detect-secrets")
     if executable is None:
         raise RuntimeError("detect-secrets no está instalado")
-    completed = subprocess.run(
-        [
-            executable,
-            "scan",
-            "--no-verify",
-            "--all-files",
-            "--exclude-files",
-            EXCLUDED_FILES,
-            str(repo_root),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    findings = parse_secret_results(json.loads(completed.stdout))
+    candidates = _candidate_files(repo_root)
+    findings: list[SecretFinding] = []
+    for start in range(0, len(candidates), SECRET_SCAN_CHUNK_SIZE):
+        chunk = candidates[start : start + SECRET_SCAN_CHUNK_SIZE]
+        relative_paths = [path.relative_to(repo_root).as_posix() for path in chunk]
+        completed = subprocess.run(
+            [
+                executable,
+                "scan",
+                "--no-verify",
+                "--exclude-files",
+                EXCLUDED_FILES,
+                "--",
+                *relative_paths,
+            ],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        findings.extend(parse_secret_results(json.loads(completed.stdout)))
     return _normalize_secret_paths(findings, repo_root)
 
 
@@ -181,6 +194,7 @@ def run_dependency_audit(book_root: Path) -> None:
             cwd=book_root,
             check=True,
             stdout=requirements,
+            stderr=subprocess.PIPE,
         )
         requirements.flush()
         subprocess.run(
@@ -192,12 +206,21 @@ def run_dependency_audit(book_root: Path) -> None:
                 "off",
             ],
             check=True,
+            capture_output=True,
         )
 
 
 def main() -> int:
-    findings = run_secret_scan(REPO_ROOT)
-    personal_paths = find_personal_paths(REPO_ROOT)
+    try:
+        findings = run_secret_scan(REPO_ROOT)
+    except Exception:
+        print("ERROR_SEGURIDAD: ESCANEO_SECRETOS", file=sys.stderr)
+        return 2
+    try:
+        personal_paths = find_personal_paths(REPO_ROOT)
+    except Exception:
+        print("ERROR_SEGURIDAD: RUTAS_PERSONALES", file=sys.stderr)
+        return 2
     if findings:
         for line in render_secret_findings(findings):
             print(f"POTENCIAL_SECRETO: {line}", file=sys.stderr)
@@ -209,7 +232,11 @@ def main() -> int:
             )
     if findings or personal_paths:
         return 1
-    run_dependency_audit(BOOK_ROOT)
+    try:
+        run_dependency_audit(BOOK_ROOT)
+    except Exception:
+        print("ERROR_SEGURIDAD: AUDITORIA_DEPENDENCIAS", file=sys.stderr)
+        return 2
     print("SEGURIDAD_PUBLICACION_OK")
     return 0
 
