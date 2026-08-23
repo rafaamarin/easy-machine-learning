@@ -1,0 +1,78 @@
+name: Validación
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validacion-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  comprobaciones-rapidas:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: macos-latest
+            python: "3.13"
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Preparar Python y uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Preparar Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Sincronizar sin descargar Pyodide
+        working-directory: libro_ml_dl
+        run: uv sync --locked --group validation --group notebooks --group security
+      - name: Verificar publicación
+        run: python3 -m unittest discover -s pruebas_publicacion -p 'test_*.py' -v
+      - name: Verificar Python
+        working-directory: libro_ml_dl
+        run: |
+          uv run --locked --group validation --group notebooks --group security \
+            python -m unittest discover -s pruebas/python -p 'test_*.py' -v
+          uv run --locked --group validation ruff check scripts pruebas contenido_fuente
+          uv run --locked --group validation ruff format --check \
+            scripts pruebas contenido_fuente
+      - name: Verificar JavaScript
+        working-directory: libro_ml_dl
+        run: node --test pruebas/js/*.test.mjs
+
+  instalacion-limpia:
+    needs: comprobaciones-rapidas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Preparar Python y uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+          python-version: "3.11"
+          enable-cache: true
+      - name: Preparar Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Instalar desde cero
+        run: ./instalar.sh --yes
+      - name: Ejecutar gate funcional completo
+        run: ./verificar.sh
