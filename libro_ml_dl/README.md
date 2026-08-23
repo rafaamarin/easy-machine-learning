@@ -1,23 +1,15 @@
-# ML/DL haciendo
+# Easy Machine Learning: libro interactivo
 
-## Preparación inicial
-
-```bash
-uv sync --group validation
-uv run python scripts/preparar_entorno.py
-```
-
-La segunda orden pide confirmación, descarga Pyodide 314.0.5 y verifica
-SHA-256. No instala kernels.
-
-## Modo completo
+Ejecuta la instalación y el lanzamiento con los wrappers de la raíz del
+repositorio:
 
 ```bash
+./instalar.sh
 ./lanzar.sh
 ```
 
-Abre la web y JupyterLab local si está disponible. TensorFlow usa `unir-tf`.
-PyTorch no forma parte de este corte.
+La instalación pide confirmación, descarga Pyodide 314.0.5, verifica SHA-256 y
+prepara el entorno local opcional de JupyterLab. No registra kernels globales.
 
 ## Modo ligero
 
@@ -31,12 +23,13 @@ no se inicia.
 ## Verificación
 
 ```bash
-uv run --group validation python scripts/verificar_corte_01.py
+./verificar.sh
+./verificar_seguridad.sh
 ```
 
-`VALIDACION_ESTATICA_OK` valida estructura.
-`CORTE_01_VALIDACION_LOCAL_OK` confirma además pruebas y artefactos locales.
-Ninguna sustituye el smoke test visual indicado abajo.
+Ambos comandos se ejecutan desde la raíz. Validan estructura, pruebas,
+contenido, notebooks, procedencia, estilo, secretos y dependencias. Ninguna
+validación estática sustituye el smoke test visual indicado abajo.
 
 ## Smoke test visual
 
@@ -49,16 +42,9 @@ Ninguna sustituye el smoke test visual indicado abajo.
 
 ## Problemas frecuentes
 
-- `Pyodide no encontrado`: ejecuta la preparación inicial.
-- `unir-tf no aparece`: revisa `jupyter kernelspec list`.
-- `Jupyter no se encuentra en un worktree`: usa
-  `--jupyter-ejecutable /ruta/al/jupyter`.
+- `AVISO: Pyodide no está preparado.`: ejecuta `./instalar.sh` desde la raíz.
+- `AVISO: Jupyter no encontrado; continúa el modo web.`: el libro sigue
+  disponible y JupyterLab queda desactivado.
 - Puerto ocupado: el lanzador selecciona otro y muestra la URL real.
 - La página abierta con `file://` no funciona: usa uno de los servidores
   locales.
-
-## Configuración local en un worktree
-
-`configuracion/local.json` está ignorado por Git. Su `vault_root` puede apuntar
-al checkout que contiene los notebooks cuando trabajas desde un worktree; el
-lanzador usa esa raíz para iniciar JupyterLab.

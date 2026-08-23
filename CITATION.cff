@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "Si utilizas este recurso, cita Easy Machine Learning."
+title: "Easy Machine Learning"
+type: software
+authors:
+  - family-names: "Marín"
+    given-names: "Rafael"
+repository-code: "https://github.com/rafaamarin/easy-machine-learning"
+version: "0.1.0"
+date-released: "2026-08-23"
+license: "MIT AND CC-BY-4.0"
