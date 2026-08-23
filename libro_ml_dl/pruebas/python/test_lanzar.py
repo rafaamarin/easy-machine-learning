@@ -21,6 +21,12 @@ from scripts.lanzar import (
 
 
 class LauncherTests(unittest.TestCase):
+    def test_launcher_copy_has_no_unir_specific_kernel_names(self) -> None:
+        book_root = Path(__file__).resolve().parents[2]
+        source = (book_root / "scripts/lanzar.py").read_text(encoding="utf-8")
+        self.assertNotIn("unir-tf", source)
+        self.assertNotIn("unir-torch", source)
+
     def test_find_free_port_skips_occupied_preferred_port(self) -> None:
         with socket.socket() as occupied:
             occupied.bind(("127.0.0.1", 0))

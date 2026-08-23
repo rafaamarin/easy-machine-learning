@@ -197,16 +197,8 @@ def main() -> int:
                 print("AVISO: Jupyter no encontrado; continúa el modo web.")
             else:
                 names = kernel_names(jupyter)
-                print(
-                    "unir-tf: disponible"
-                    if "unir-tf" in names
-                    else "unir-tf: no disponible"
-                )
-                print(
-                    "unir-torch: disponible"
-                    if "unir-torch" in names
-                    else "unir-torch: pendiente para un corte posterior"
-                )
+                python_status = "disponible" if "python3" in names else "no registrado"
+                print(f"Kernel Python del proyecto: {python_status}")
                 jupyter_port = find_free_port(arguments.puerto_jupyter)
                 token = secrets.token_urlsafe(32)
                 command = build_jupyter_command(
