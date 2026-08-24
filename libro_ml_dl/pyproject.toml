@@ -13,7 +13,7 @@ validation = [
     "numpy==2.4.6",
     "pandas==3.0.2",
     "ruff==0.16.4",
-    "scikit-learn==1.8.0",
+    "scikit-learn==1.9.0",
 ]
 notebooks = [
     "ipykernel>=6.30,<8",
@@ -23,7 +23,7 @@ notebooks = [
     "nbformat>=5.10,<6",
     "numpy==2.4.6",
     "pandas==3.0.2",
-    "scikit-learn==1.8.0",
+    "scikit-learn==1.9.0",
 ]
 security = [
     "detect-secrets==1.5.0",
