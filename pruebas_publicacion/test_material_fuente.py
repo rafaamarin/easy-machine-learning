@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -39,10 +40,16 @@ class SourceMaterialTests(unittest.TestCase):
     def test_notebook_inventory_contains_exactly_the_three_approved_files(
         self,
     ) -> None:
-        material_root = REPO_ROOT / "material_fuente"
+        completed = subprocess.run(
+            ["git", "ls-files", "-z", "*.ipynb"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+        )
         actual = {
-            path.relative_to(REPO_ROOT).as_posix()
-            for path in material_root.rglob("*.ipynb")
+            item.decode("utf-8")
+            for item in completed.stdout.split(b"\0")
+            if item
         }
         self.assertEqual(actual, set(EXPECTED_HASHES))
 

@@ -55,8 +55,10 @@ instalación. Desde la raíz del clon:
 ```
 
 La instalación solicita confirmación antes de descargar el runtime local de
-Pyodide. El lanzador publica únicamente en loopback y abre el libro; si el
-entorno de Jupyter está disponible, también inicia JupyterLab local.
+Pyodide. El lanzador publica únicamente en loopback y abre el libro mediante
+una allowlist mínima de HTML y assets; no expone scripts, configuración, fuentes
+ni entornos. Si Jupyter falla o no está disponible, el servidor web permanece
+activo y muestra un aviso accionable sin detalles sensibles.
 
 ## Reproducir y verificar
 

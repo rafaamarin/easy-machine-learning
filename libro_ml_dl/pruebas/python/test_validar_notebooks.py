@@ -74,23 +74,30 @@ class NotebookExecutionTests(unittest.TestCase):
             self.assertEqual(summary.path, path)
             self.assertEqual(path.read_bytes(), original)
 
-    def test_absolute_mutation_is_restored_even_when_execution_fails(self) -> None:
+    def test_concurrent_source_edit_is_preserved_when_execution_fails(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
             path = self._write_notebook(root, "pass")
-            path = self._write_notebook(
-                root,
-                "from pathlib import Path\n"
-                f"Path({str(path)!r}).write_text('mutated', encoding='utf-8')\n"
-                "raise RuntimeError('fallo tras mutación')",
-            )
             original = path.read_bytes()
+            concurrent_bytes = b"concurrent notebook edit\n"
 
-            with self.assertRaisesRegex(RuntimeError, "notebook fuente") as raised:
-                execute_notebook(path)
+            def edit_source_then_fail() -> None:
+                path.write_bytes(concurrent_bytes)
+                raise RuntimeError("fallo de ejecución sintético")
 
-            self.assertEqual(path.read_bytes(), original)
-            self.assertIsInstance(raised.exception.__context__, CellExecutionError)
+            with patch(
+                "scripts.validar_notebooks.NotebookClient.execute",
+                side_effect=edit_source_then_fail,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "notebook fuente",
+                ) as raised:
+                    execute_notebook(path)
+
+            self.assertNotEqual(path.read_bytes(), original)
+            self.assertEqual(path.read_bytes(), concurrent_bytes)
+            self.assertIsInstance(raised.exception.__context__, RuntimeError)
 
     def test_project_kernel_path_restores_previous_value_after_error(self) -> None:
         with patch.dict(os.environ, {"JUPYTER_PATH": "previous"}, clear=True):

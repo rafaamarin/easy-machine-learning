@@ -6,9 +6,11 @@ import subprocess
 import sys
 import time
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from scripts.lanzar import (
     build_jupyter_command,
@@ -124,9 +126,197 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(main(), 1)
 
         find_jupyter.assert_called_once_with(book_root)
+        self.assertIs(popen.call_args_list[0].kwargs["stdout"], subprocess.DEVNULL)
+        self.assertIs(popen.call_args_list[0].kwargs["stderr"], subprocess.DEVNULL)
         command = popen.call_args_list[1].args[0]
         self.assertEqual(command[0], str(project_jupyter))
         self.assertIn(f"--ServerApp.root_dir={vault_root}", command)
+        self.assertIs(popen.call_args_list[1].kwargs["stdout"], subprocess.DEVNULL)
+        self.assertIs(popen.call_args_list[1].kwargs["stderr"], subprocess.DEVNULL)
+
+    def test_kernelspec_failure_keeps_http_alive_and_redacts_details(self) -> None:
+        sensitive_detail = "token=synthetic-sensitive-value"
+        http_process = Mock(pid=101)
+        http_process.poll.return_value = None
+        output = StringIO()
+        with (
+            patch.object(sys, "argv", ["lanzar.py", "--sin-navegador"]),
+            patch(
+                "scripts.lanzar.find_jupyter_executable",
+                return_value=Path("/tmp/jupyter"),
+            ),
+            patch("scripts.lanzar.find_free_port", return_value=8000),
+            patch("scripts.lanzar.wait_for_port"),
+            patch(
+                "scripts.lanzar.kernel_names",
+                side_effect=RuntimeError(sensitive_detail),
+            ),
+            patch("scripts.lanzar.subprocess.Popen", return_value=http_process),
+            patch(
+                "scripts.lanzar.time.sleep",
+                side_effect=KeyboardInterrupt,
+            ),
+            patch("scripts.lanzar.stop_processes") as stop_processes_mock,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertIn("continúa el modo web", output.getvalue())
+        self.assertNotIn(sensitive_detail, output.getvalue())
+        self.assertGreater(http_process.poll.call_count, 0)
+        stop_processes_mock.assert_called_once_with([http_process])
+
+    def test_jupyter_override_resolution_failure_keeps_http_alive(self) -> None:
+        sensitive_detail = "synthetic override credential"
+        configured_path = Path("/tmp/configured-jupyter")
+        original_resolve = Path.resolve
+        http_process = Mock(pid=101)
+        http_process.poll.return_value = None
+        output = StringIO()
+
+        def resolve_or_fail(path: Path, *args: object, **kwargs: object) -> Path:
+            if path == configured_path:
+                raise RuntimeError(sensitive_detail)
+            return original_resolve(path, *args, **kwargs)
+
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "lanzar.py",
+                    "--sin-navegador",
+                    "--jupyter-ejecutable",
+                    str(configured_path),
+                ],
+            ),
+            patch("scripts.lanzar.Path.resolve", new=resolve_or_fail),
+            patch("scripts.lanzar.find_free_port", return_value=8000),
+            patch("scripts.lanzar.wait_for_port"),
+            patch(
+                "scripts.lanzar.subprocess.Popen",
+                return_value=http_process,
+            ) as popen,
+            patch(
+                "scripts.lanzar.time.sleep",
+                side_effect=KeyboardInterrupt,
+            ),
+            patch("scripts.lanzar.stop_processes") as stop_processes_mock,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertEqual(popen.call_count, 1)
+        self.assertIn("continúa el modo web", output.getvalue())
+        self.assertNotIn(sensitive_detail, output.getvalue())
+        self.assertGreater(http_process.poll.call_count, 0)
+        stop_processes_mock.assert_called_once_with([http_process])
+
+    def test_jupyter_spawn_failure_keeps_http_alive(self) -> None:
+        sensitive_detail = "synthetic spawn credential"
+        http_process = Mock(pid=101)
+        http_process.poll.return_value = None
+        output = StringIO()
+        with (
+            patch.object(sys, "argv", ["lanzar.py", "--sin-navegador"]),
+            patch(
+                "scripts.lanzar.find_jupyter_executable",
+                return_value=Path("/tmp/jupyter"),
+            ),
+            patch("scripts.lanzar.find_free_port", side_effect=[8000, 8888]),
+            patch("scripts.lanzar.wait_for_port"),
+            patch("scripts.lanzar.kernel_names", return_value={"python3"}),
+            patch(
+                "scripts.lanzar.subprocess.Popen",
+                side_effect=[http_process, OSError(sensitive_detail)],
+            ),
+            patch(
+                "scripts.lanzar.time.sleep",
+                side_effect=KeyboardInterrupt,
+            ),
+            patch("scripts.lanzar.stop_processes") as stop_processes_mock,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertIn("continúa el modo web", output.getvalue())
+        self.assertNotIn(sensitive_detail, output.getvalue())
+        self.assertGreater(http_process.poll.call_count, 0)
+        stop_processes_mock.assert_called_once_with([http_process])
+
+    def test_jupyter_readiness_failure_cleans_only_jupyter(self) -> None:
+        sensitive_detail = "token=readiness-secret"
+        http_process = Mock(pid=101)
+        jupyter_process = Mock(pid=202)
+        http_process.poll.return_value = None
+        output = StringIO()
+        with (
+            patch.object(sys, "argv", ["lanzar.py", "--sin-navegador"]),
+            patch(
+                "scripts.lanzar.find_jupyter_executable",
+                return_value=Path("/tmp/jupyter"),
+            ),
+            patch("scripts.lanzar.find_free_port", side_effect=[8000, 8888]),
+            patch(
+                "scripts.lanzar.wait_for_port",
+                side_effect=[None, RuntimeError(sensitive_detail)],
+            ),
+            patch("scripts.lanzar.kernel_names", return_value={"python3"}),
+            patch(
+                "scripts.lanzar.subprocess.Popen",
+                side_effect=[http_process, jupyter_process],
+            ),
+            patch(
+                "scripts.lanzar.time.sleep",
+                side_effect=KeyboardInterrupt,
+            ),
+            patch("scripts.lanzar.stop_processes") as stop_processes_mock,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertIn("continúa el modo web", output.getvalue())
+        self.assertNotIn(sensitive_detail, output.getvalue())
+        self.assertGreater(http_process.poll.call_count, 0)
+        self.assertEqual(
+            stop_processes_mock.call_args_list,
+            [call([jupyter_process]), call([http_process])],
+        )
+
+    def test_later_jupyter_exit_keeps_http_alive_and_cleans_its_group(self) -> None:
+        http_process = Mock(pid=101)
+        jupyter_process = Mock(pid=202)
+        http_process.poll.return_value = None
+        jupyter_process.poll.return_value = 7
+        output = StringIO()
+        with (
+            patch.object(sys, "argv", ["lanzar.py", "--sin-navegador"]),
+            patch(
+                "scripts.lanzar.find_jupyter_executable",
+                return_value=Path("/tmp/jupyter"),
+            ),
+            patch("scripts.lanzar.find_free_port", side_effect=[8000, 8888]),
+            patch("scripts.lanzar.wait_for_port"),
+            patch("scripts.lanzar.kernel_names", return_value={"python3"}),
+            patch(
+                "scripts.lanzar.subprocess.Popen",
+                side_effect=[http_process, jupyter_process],
+            ),
+            patch(
+                "scripts.lanzar.time.sleep",
+                side_effect=KeyboardInterrupt,
+            ),
+            patch("scripts.lanzar.stop_processes") as stop_processes_mock,
+            redirect_stdout(output),
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertIn("el libro web sigue disponible", output.getvalue())
+        self.assertGreater(http_process.poll.call_count, 0)
+        self.assertEqual(
+            stop_processes_mock.call_args_list,
+            [call([jupyter_process]), call([http_process])],
+        )
 
     def test_wait_for_port_observes_a_listening_local_socket(self) -> None:
         with socket.socket() as listener:

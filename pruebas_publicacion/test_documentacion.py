@@ -84,14 +84,28 @@ class DocumentationTests(unittest.TestCase):
             normalized_source,
         )
 
-    def test_lightweight_server_enters_book_directory_from_repo_root(self) -> None:
-        source = REPO_ROOT.joinpath("libro_ml_dl/README.md").read_text(
+    def test_lightweight_mode_uses_only_the_safe_launcher(self) -> None:
+        for relative_path in (
+            "README.md",
+            "REPRODUCIBILITY.md",
+            "libro_ml_dl/README.md",
+        ):
+            source = REPO_ROOT.joinpath(relative_path).read_text(encoding="utf-8")
+            self.assertNotIn("python3 -m http.server", source, relative_path)
+        reproducibility = REPO_ROOT.joinpath("REPRODUCIBILITY.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn(
-            "cd libro_ml_dl\npython3 -m http.server 8000 --bind 127.0.0.1",
-            source,
+        self.assertIn("./lanzar.sh --sin-jupyter", reproducibility)
+
+    def test_reproducibility_documents_managed_python_side_effects(self) -> None:
+        source = REPO_ROOT.joinpath("REPRODUCIBILITY.md").read_text(
+            encoding="utf-8"
         )
+        normalized = " ".join(source.split())
+        self.assertIn(".python-version", source)
+        self.assertIn("Python 3.11", source)
+        self.assertIn("Python gestionado", normalized)
+        self.assertIn("fuera del repositorio", normalized)
 
 
 if __name__ == "__main__":

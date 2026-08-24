@@ -43,7 +43,9 @@ jobs:
         working-directory: libro_ml_dl
         run: uv sync --locked --group validation --group notebooks --group security
       - name: Verificar publicación
-        run: python3 -m unittest discover -s pruebas_publicacion -p 'test_*.py' -v
+        run: |
+          uv run --project libro_ml_dl --locked --group validation \
+            python -m unittest discover -s pruebas_publicacion -p 'test_*.py' -v
       - name: Verificar Python
         working-directory: libro_ml_dl
         run: |

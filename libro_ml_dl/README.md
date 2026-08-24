@@ -14,12 +14,13 @@ prepara el entorno local opcional de JupyterLab. No registra kernels globales.
 ## Modo ligero
 
 ```bash
-cd libro_ml_dl
-python3 -m http.server 8000 --bind 127.0.0.1
+./lanzar.sh --sin-jupyter
 ```
 
-Abre `http://127.0.0.1:8000`. Lectura, progreso y Pyodide funcionan; Jupyter
-no se inicia.
+Abre la URL `Libro:` que muestra el launcher. Lectura, progreso y Pyodide
+funcionan; Jupyter no se inicia. El servidor sólo publica los HTML construidos
+y assets requeridos: no sirve configuración, scripts, fuentes, entornos,
+locks, dotfiles ni listados de directorio.
 
 ## Verificación
 
@@ -46,6 +47,9 @@ validación estática sustituye el smoke test visual indicado abajo.
 - `AVISO: Pyodide no está preparado.`: ejecuta `./instalar.sh` desde la raíz.
 - `AVISO: Jupyter no encontrado; continúa el modo web.`: el libro sigue
   disponible y JupyterLab queda desactivado.
+- `AVISO: JupyterLab no pudo iniciarse; continúa el modo web.`: repite la
+  instalación y revisa únicamente la configuración local; el libro web sigue
+  activo.
 - Puerto ocupado: el lanzador selecciona otro y muestra la URL real.
 - La página abierta con `file://` no funciona: usa uno de los servidores
   locales.

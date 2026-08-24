@@ -61,6 +61,10 @@ class PublicationHygieneTests(unittest.TestCase):
             "Limitaciones",
         ):
             self.assertIn(marker, source)
+        self.assertIn("CANDIDATA", source)
+        self.assertIn("6 Important", source)
+        self.assertIn("re-review", source)
+        self.assertNotIn("AUDITORÍA FINAL EN EL ALCANCE", source)
 
 
 if __name__ == "__main__":

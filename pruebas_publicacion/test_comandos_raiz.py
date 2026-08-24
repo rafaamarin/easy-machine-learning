@@ -102,6 +102,14 @@ class RootCommandTests(unittest.TestCase):
                 self.assertIn("árbol de trabajo", rendered)
                 self.assertNotIn(sensitive_name, rendered)
 
+    def test_verifier_uses_project_uv_python_for_publication_tests(self) -> None:
+        source = REPO_ROOT.joinpath("verificar.sh").read_text(encoding="utf-8")
+        self.assertIn('uv run --project "$book_root"', source)
+        self.assertNotIn(
+            "python3 -m unittest discover -s pruebas_publicacion",
+            source,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

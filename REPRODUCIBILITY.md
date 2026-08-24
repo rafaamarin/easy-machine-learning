@@ -29,14 +29,22 @@ cd easy-machine-learning
 ## Modo web ligero
 
 ```bash
-cd libro_ml_dl
-python3 -m http.server 8000 --bind 127.0.0.1
+./lanzar.sh --sin-jupyter
 ```
+
+Este modo usa el mismo servidor de publicación mínimo que el lanzamiento
+completo: sólo expone la portada, el contenido construido y los assets que
+consume la web. No publica scripts, configuración local, fuentes, entornos,
+locks, dotfiles ni listados de directorio.
 
 ## Qué no modifica la instalación
 
-No instala kernels globales, no escribe fuera del repositorio salvo caches de
-`uv`, no cambia los notebooks fuente y no expone servicios fuera de loopback.
+No instala kernels globales, no cambia los notebooks fuente y no expone
+servicios fuera de loopback. `libro_ml_dl/.python-version` selecciona Python
+3.11. Si ese intérprete no existe, `uv` puede instalar un Python gestionado en
+su directorio global fuera del repositorio; también mantiene allí sus caches.
+Dentro del repositorio sólo crea el entorno y los artefactos ignorados
+documentados.
 
 ## Solución de problemas
 
@@ -56,6 +64,6 @@ No instala kernels globales, no escribe fuera del repositorio salvo caches de
   servicio continúa limitado a `127.0.0.1`.
 - **Jupyter no está disponible.** El lanzador muestra
   `AVISO: Jupyter no encontrado; continúa el modo web.` y mantiene el libro en
-  modo web. Repite `./instalar.sh` para reconstruir el entorno opcional. Si
-  proporcionas una ruta inválida con `--jupyter-ejecutable`, el error empieza
-  por `Jupyter no existe:`.
+  modo web. Cualquier fallo posterior muestra un aviso sin detalles sensibles y
+  conserva el servidor web. Repite `./instalar.sh` para reconstruir el entorno
+  opcional y revisa `configuracion/local.json` si lo utilizas.

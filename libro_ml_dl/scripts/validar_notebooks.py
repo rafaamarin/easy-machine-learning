@@ -101,17 +101,9 @@ def execute_notebook(path: Path) -> NotebookExecutionSummary:
         except OSError:
             source_changed = True
         if source_changed:
-            try:
-                path.write_bytes(original_bytes)
-                restored = path.read_bytes() == original_bytes
-            except OSError as error:
-                raise RuntimeError(
-                    "el notebook fuente cambió y no pudo restaurarse"
-                ) from error
-            if not restored:
-                raise RuntimeError("el notebook fuente cambió y no pudo restaurarse")
             raise RuntimeError(
-                "el notebook fuente cambió durante la ejecución y fue restaurado"
+                "el notebook fuente cambió durante la ejecución; "
+                "la edición nueva se conserva"
             )
 
 

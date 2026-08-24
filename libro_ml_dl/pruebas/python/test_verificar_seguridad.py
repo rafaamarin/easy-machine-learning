@@ -7,6 +7,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from scripts.verificar_seguridad import REPO_ROOT as SECURITY_REPO_ROOT
@@ -16,6 +17,7 @@ from scripts.verificar_seguridad import (
     SecretFinding,
     _candidate_files,
     _is_adjudicated_checksum,
+    _materialize_commit,
     _parse_git_tree_entries,
     find_personal_paths,
     main,
@@ -25,6 +27,8 @@ from scripts.verificar_seguridad import (
     run_dependency_audit,
     run_secret_scan,
     scan_git_history,
+    scan_git_index,
+    scan_security_snapshot,
 )
 
 
@@ -81,6 +85,38 @@ class SecurityVerificationTests(unittest.TestCase):
             private_marker = "/".join(("", "Users", "rafa", "Documents"))
             private_path.write_text(private_marker, encoding="utf-8")
             self.assertEqual(find_personal_paths(repo_root), [private_path])
+
+    def test_personal_path_in_non_utf8_blob_is_found_everywhere(self) -> None:
+        private_marker = "/".join(("", "Users", "rafa", "Documents"))
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            self._initialize_git_repo(repo_root)
+            fixture = repo_root / "binary.dat"
+            fixture.write_bytes(b"\xff\n" + private_marker.encode("ascii") + b"\n")
+            self._commit_all(repo_root, "binary personal path")
+
+            current_result = scan_security_snapshot(repo_root)
+            index_result = scan_git_index(repo_root)
+            with self.assertRaises(HistoricalScanError) as raised:
+                scan_git_history(repo_root)
+
+        self.assertEqual(
+            [
+                (finding.path, finding.line_number)
+                for finding in current_result.personal_findings
+            ],
+            [("binary.dat", 2)],
+        )
+        self.assertEqual(
+            [
+                (finding.path, finding.line_number)
+                for finding in index_result.personal_findings
+            ],
+            [("binary.dat", 2)],
+        )
+        report = "\n".join(render_historical_findings(raised.exception.findings))
+        self.assertIn("binary.dat:2", report)
+        self.assertNotIn(private_marker, report)
 
     def test_ignores_ephemeral_superpowers_workspace(self) -> None:
         with TemporaryDirectory() as directory:
@@ -176,11 +212,27 @@ class SecurityVerificationTests(unittest.TestCase):
             stderr = StringIO()
             with (
                 patch(
-                    "scripts.verificar_seguridad.run_secret_scan",
-                    return_value=[],
+                    "scripts.verificar_seguridad.scan_security_snapshot",
+                    return_value=SimpleNamespace(
+                        rejected=(),
+                        adjudicated=(),
+                        personal_findings=(),
+                    ),
                 ),
                 patch(
                     "scripts.verificar_seguridad.find_personal_paths",
+                    return_value=[],
+                ),
+                patch(
+                    "scripts.verificar_seguridad.scan_git_index",
+                    return_value=SimpleNamespace(
+                        rejected=(),
+                        adjudicated=(),
+                        personal_findings=(),
+                    ),
+                ),
+                patch(
+                    "scripts.verificar_seguridad.scan_git_history",
                     return_value=[],
                 ),
                 patch(
@@ -295,6 +347,124 @@ class SecurityVerificationTests(unittest.TestCase):
                 )
             )
 
+    def test_snapshot_scan_runs_the_only_allowlisted_pass(self) -> None:
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            repo_root.joinpath("ordinary.txt").write_text(
+                'note = "# pragma: allowlist secret"\n',
+                encoding="utf-8",
+            )
+            scanner_commands: list[list[str]] = []
+
+            def scan_without_findings(
+                command: list[str],
+                **_kwargs: object,
+            ) -> subprocess.CompletedProcess[str]:
+                scanner_commands.append(command)
+                return subprocess.CompletedProcess(
+                    command,
+                    0,
+                    stdout=json.dumps({"results": {}}),
+                    stderr="",
+                )
+
+            with (
+                patch(
+                    "scripts.verificar_seguridad.shutil.which",
+                    return_value="detect-secrets",
+                ),
+                patch(
+                    "scripts.verificar_seguridad.subprocess.run",
+                    side_effect=scan_without_findings,
+                ),
+            ):
+                result = scan_security_snapshot(
+                    repo_root,
+                    [repo_root / "ordinary.txt"],
+                )
+
+        self.assertEqual(result.rejected, ())
+        self.assertEqual(result.adjudicated, ())
+        self.assertEqual(len(scanner_commands), 2)
+        self.assertNotIn("--only-allowlisted", scanner_commands[0])
+        self.assertIn("--only-allowlisted", scanner_commands[1])
+
+    def test_current_allowlisted_secret_is_rejected_and_redacted(self) -> None:
+        candidate = "".join(("synthetic", "-private-", "value-", "D" * 32))
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            fixture = repo_root / "fixture.py"
+            fixture.write_text(
+                f'api_key = "{candidate}"  # pragma: allowlist secret\n',
+                encoding="utf-8",
+            )
+
+            result = scan_security_snapshot(repo_root, [fixture])
+
+        report = "\n".join(render_secret_findings(list(result.rejected)))
+        self.assertIn("fixture.py:1", report)
+        self.assertNotIn(candidate, report)
+        self.assertEqual(result.adjudicated, ())
+
+    def test_non_utf8_allowlisted_secret_is_rejected_everywhere(self) -> None:
+        candidate = "".join(("synthetic", "-private-", "value-", "G" * 32))
+        suppressed_line = (
+            f'api_key = "{candidate}"  # pragma: allowlist secret\n'.encode()
+        )
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            self._initialize_git_repo(repo_root)
+            fixture = repo_root / "binary_secret.dat"
+            fixture.write_bytes(b"\xff\n" + suppressed_line)
+            self._commit_all(repo_root, "binary suppressed secret")
+
+            current_result = scan_security_snapshot(repo_root)
+            index_result = scan_git_index(repo_root)
+            with self.assertRaises(HistoricalScanError) as raised:
+                scan_git_history(repo_root)
+
+        for findings in (current_result.rejected, index_result.rejected):
+            report = "\n".join(render_secret_findings(list(findings)))
+            self.assertIn("binary_secret.dat:2", report)
+            self.assertNotIn(candidate, report)
+        historical_report = "\n".join(
+            render_historical_findings(raised.exception.findings)
+        )
+        self.assertIn("binary_secret.dat:2", historical_report)
+        self.assertNotIn(candidate, historical_report)
+
+    def test_current_approved_suppressions_are_exactly_adjudicated(self) -> None:
+        result = scan_security_snapshot(SECURITY_REPO_ROOT)
+
+        self.assertEqual(result.rejected, ())
+        self.assertEqual(len(result.adjudicated), 26)
+        self.assertEqual(
+            len(
+                {(finding.path, finding.line_number) for finding in result.adjudicated}
+            ),
+            26,
+        )
+
+    def test_staged_secret_is_scanned_when_worktree_copy_is_safe(self) -> None:
+        candidate = "".join(("synthetic", "-private-", "value-", "E" * 32))
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            self._initialize_git_repo(repo_root)
+            fixture = repo_root / "fixture.py"
+            fixture.write_text("value = 'safe'\n", encoding="utf-8")
+            self._commit_all(repo_root, "safe")
+            fixture.write_text(f'api_key = "{candidate}"\n', encoding="utf-8")
+            subprocess.run(["git", "add", "fixture.py"], cwd=repo_root, check=True)
+            fixture.write_text("value = 'safe again'\n", encoding="utf-8")
+
+            worktree_result = scan_security_snapshot(repo_root)
+            index_result = scan_git_index(repo_root)
+
+        self.assertEqual(worktree_result.rejected, ())
+        report = "\n".join(render_secret_findings(list(index_result.rejected)))
+        self.assertIn("fixture.py:1", report)
+        self.assertNotIn(candidate, report)
+
     def test_git_candidate_inventory_fails_closed(self) -> None:
         with TemporaryDirectory() as directory:
             repo_root = Path(directory)
@@ -402,6 +572,10 @@ class SecurityVerificationTests(unittest.TestCase):
             b"160000 commit " + object_id + b"\tsubmodule\0",
             b"100644 blob " + object_id + b"\tduplicate\0"
             b"100644 blob " + object_id + b"\tduplicate\0",
+            b"100644 blob " + object_id + b"\tConfig.py\0"
+            b"100644 blob " + object_id + b"\tconfig.py\0",
+            b"100644 blob " + object_id + b"\tcaf\xc3\xa9.py\0"
+            b"100644 blob " + object_id + b"\tcafe\xcc\x81.py\0",
             b"100644 blob " + object_id + b"\tinvalid-\xff-name\0",
             b"100644 blob " + object_id + b"\t../escaped\0",
             b"100600 blob " + object_id + b"\tunsupported-mode\0",
@@ -410,6 +584,30 @@ class SecurityVerificationTests(unittest.TestCase):
             with self.subTest(inventory=inventory[:16]):
                 with self.assertRaises(RuntimeError):
                     _parse_git_tree_entries(inventory)
+
+    def test_colliding_git_paths_fail_before_any_blob_is_read(self) -> None:
+        object_id = b"a" * 40
+        inventory = subprocess.CompletedProcess(
+            ["git", "ls-tree"],
+            0,
+            stdout=(
+                b"100644 blob " + object_id + b"\tConfig.py\0"
+                b"100644 blob " + object_id + b"\tconfig.py\0"
+            ),
+            stderr=b"",
+        )
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            snapshot_root = repo_root / "snapshot"
+            snapshot_root.mkdir()
+            with patch(
+                "scripts.verificar_seguridad.subprocess.run",
+                return_value=inventory,
+            ) as run:
+                with self.assertRaisesRegex(RuntimeError, "colisión"):
+                    _materialize_commit(repo_root, "a" * 40, snapshot_root)
+
+        self.assertEqual(run.call_count, 1)
 
     def test_history_scans_tracked_files_in_normally_excluded_paths(self) -> None:
         candidate = "".join(("synthetic", "-private-", "material-", "B" * 32))
@@ -527,6 +725,25 @@ class SecurityVerificationTests(unittest.TestCase):
         self.assertIn("fixture.py:1", report)
         self.assertNotIn(candidate, report)
 
+    def test_history_scan_rejects_allowlisted_credential_fixture(self) -> None:
+        candidate = "".join(("synthetic", "-private-", "value-", "F" * 32))
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            self._initialize_git_repo(repo_root)
+            fixture = repo_root / "fixture.py"
+            fixture.write_text(
+                f'api_key = "{candidate}"  # pragma: allowlist secret\n',
+                encoding="utf-8",
+            )
+            self._commit_all(repo_root, "suppressed credential")
+
+            with self.assertRaises(HistoricalScanError) as raised:
+                scan_git_history(repo_root)
+
+        report = "\n".join(render_historical_findings(raised.exception.findings))
+        self.assertIn("fixture.py:1", report)
+        self.assertNotIn(candidate, report)
+
     def test_historical_rendering_contains_only_escaped_metadata(self) -> None:
         finding = HistoricalFinding(
             commit="abc\nspoof",
@@ -549,8 +766,23 @@ class SecurityVerificationTests(unittest.TestCase):
         stdout = StringIO()
         stderr = StringIO()
         with (
-            patch("scripts.verificar_seguridad.run_secret_scan", return_value=[]),
+            patch(
+                "scripts.verificar_seguridad.scan_security_snapshot",
+                return_value=SimpleNamespace(
+                    rejected=(),
+                    adjudicated=(),
+                    personal_findings=(),
+                ),
+            ),
             patch("scripts.verificar_seguridad.find_personal_paths", return_value=[]),
+            patch(
+                "scripts.verificar_seguridad.scan_git_index",
+                return_value=SimpleNamespace(
+                    rejected=(),
+                    adjudicated=(),
+                    personal_findings=(),
+                ),
+            ),
             patch(
                 "scripts.verificar_seguridad.scan_git_history",
                 side_effect=failure,
@@ -573,10 +805,31 @@ class SecurityVerificationTests(unittest.TestCase):
         stdout = StringIO()
         stderr = StringIO()
         with (
-            patch("scripts.verificar_seguridad.run_secret_scan", return_value=[]),
+            patch(
+                "scripts.verificar_seguridad.scan_security_snapshot",
+                return_value=SimpleNamespace(
+                    rejected=(),
+                    adjudicated=(),
+                    personal_findings=(
+                        SecretFinding(
+                            "unsafe\nname.txt",
+                            1,
+                            "Ruta personal",
+                        ),
+                    ),
+                ),
+            ),
             patch(
                 "scripts.verificar_seguridad.find_personal_paths",
                 return_value=[unsafe_path],
+            ),
+            patch(
+                "scripts.verificar_seguridad.scan_git_index",
+                return_value=SimpleNamespace(
+                    rejected=(),
+                    adjudicated=(),
+                    personal_findings=(),
+                ),
             ),
             patch("scripts.verificar_seguridad.scan_git_history", return_value=[]),
             patch("scripts.verificar_seguridad.run_dependency_audit") as audit,

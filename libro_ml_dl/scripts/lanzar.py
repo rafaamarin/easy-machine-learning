@@ -106,6 +106,17 @@ def build_jupyter_command(
     ]
 
 
+def build_web_command(book_root: Path, port: int) -> list[str]:
+    return [
+        sys.executable,
+        str(book_root / "scripts" / "servidor_web.py"),
+        "--book-root",
+        str(book_root),
+        "--port",
+        str(port),
+    ]
+
+
 def _signal_process_groups(
     group_ids: list[int],
     signal_number: signal.Signals,
@@ -157,30 +168,30 @@ def main() -> int:
     arguments = parser.parse_args()
 
     book_root = Path(__file__).resolve().parents[1]
-    vault_root = resolve_vault_root(book_root)
     jupyter_override = arguments.jupyter_ejecutable
-    if jupyter_override is not None:
-        jupyter_override = jupyter_override.expanduser().resolve()
-        if not jupyter_override.is_file():
-            parser.error(f"Jupyter no existe: {jupyter_override}")
-    web_port = find_free_port(arguments.puerto_web)
-    web_url = f"http://127.0.0.1:{web_port}/"
-    processes: list[subprocess.Popen[bytes]] = []
-
-    http_command = [
-        sys.executable,
-        "-m",
-        "http.server",
-        str(web_port),
-        "--bind",
-        "127.0.0.1",
-        "--directory",
-        str(book_root),
-    ]
+    http_process: subprocess.Popen[bytes] | None = None
+    jupyter_process: subprocess.Popen[bytes] | None = None
     try:
-        http_process = subprocess.Popen(http_command, start_new_session=True)
-        processes.append(http_process)
+        web_port = find_free_port(arguments.puerto_web)
+        web_url = f"http://127.0.0.1:{web_port}/"
+        http_process = subprocess.Popen(
+            build_web_command(book_root, web_port),
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         wait_for_port(web_port, timeout_seconds=10, process=http_process)
+    except Exception:
+        if http_process is not None:
+            stop_processes([http_process])
+        print(
+            "ERROR: el servidor web local no pudo iniciarse. "
+            "Revisa el entorno y el puerto configurado.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
         manifest_path = (
             book_root / "assets" / "vendor" / "pyodide" / "manifest.local.json"
         )
@@ -192,46 +203,75 @@ def main() -> int:
 
         book_url = web_url
         if not arguments.sin_jupyter:
-            jupyter = jupyter_override or find_jupyter_executable(book_root)
-            if jupyter is None:
-                print("AVISO: Jupyter no encontrado; continúa el modo web.")
-            else:
-                names = kernel_names(jupyter)
-                python_status = "disponible" if "python3" in names else "no registrado"
-                print(f"Kernel Python del proyecto: {python_status}")
-                jupyter_port = find_free_port(arguments.puerto_jupyter)
-                token = secrets.token_urlsafe(32)
-                command = build_jupyter_command(
-                    jupyter,
-                    jupyter_port,
-                    token,
-                    vault_root,
+            try:
+                if jupyter_override is not None:
+                    jupyter_override = jupyter_override.expanduser().resolve()
+                    if not jupyter_override.is_file():
+                        raise RuntimeError("Jupyter configurado no disponible")
+                jupyter = jupyter_override or find_jupyter_executable(book_root)
+                if jupyter is None:
+                    print("AVISO: Jupyter no encontrado; continúa el modo web.")
+                else:
+                    vault_root = resolve_vault_root(book_root)
+                    names = kernel_names(jupyter)
+                    python_status = (
+                        "disponible" if "python3" in names else "no registrado"
+                    )
+                    print(f"Kernel Python del proyecto: {python_status}")
+                    jupyter_port = find_free_port(arguments.puerto_jupyter)
+                    token = secrets.token_urlsafe(32)
+                    command = build_jupyter_command(
+                        jupyter,
+                        jupyter_port,
+                        token,
+                        vault_root,
+                    )
+                    jupyter_process = subprocess.Popen(
+                        command,
+                        start_new_session=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    wait_for_port(
+                        jupyter_port,
+                        timeout_seconds=30,
+                        process=jupyter_process,
+                    )
+                    jupyter_url = f"http://127.0.0.1:{jupyter_port}/lab?token={token}"
+                    print(f"JupyterLab: {jupyter_url}")
+                    book_url = f"{web_url}?{urlencode({'jupyter_url': jupyter_url})}"
+            except Exception:
+                if jupyter_process is not None:
+                    stop_processes([jupyter_process])
+                    jupyter_process = None
+                print(
+                    "AVISO: JupyterLab no pudo iniciarse; continúa el modo web. "
+                    "Repite './instalar.sh' y revisa la configuración local."
                 )
-                jupyter_process = subprocess.Popen(
-                    command,
-                    start_new_session=True,
-                )
-                processes.append(jupyter_process)
-                wait_for_port(
-                    jupyter_port,
-                    timeout_seconds=30,
-                    process=jupyter_process,
-                )
-                jupyter_url = f"http://127.0.0.1:{jupyter_port}/lab?token={token}"
-                print(f"JupyterLab: {jupyter_url}")
-                book_url = f"{web_url}?{urlencode({'jupyter_url': jupyter_url})}"
 
         print(f"Libro: {book_url}")
         if not arguments.sin_navegador:
             webbrowser.open(book_url)
-        while all(process.poll() is None for process in processes):
+        while True:
+            if http_process.poll() is not None:
+                print("ERROR: el servidor web local terminó de forma inesperada.")
+                return 1
+            if jupyter_process is not None and jupyter_process.poll() is not None:
+                stop_processes([jupyter_process])
+                jupyter_process = None
+                print(
+                    "AVISO: JupyterLab se detuvo; "
+                    "el libro web sigue disponible. "
+                    "Repite './instalar.sh' antes de reintentar."
+                )
             time.sleep(0.5)
-        print("ERROR: un proceso local terminó de forma inesperada.")
-        return 1
     except KeyboardInterrupt:
         return 0
     finally:
-        stop_processes(processes)
+        remaining_processes = [http_process]
+        if jupyter_process is not None:
+            remaining_processes.append(jupyter_process)
+        stop_processes(remaining_processes)
 
 
 if __name__ == "__main__":

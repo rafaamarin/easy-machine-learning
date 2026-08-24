@@ -163,6 +163,28 @@ class ManifestValidationTests(unittest.TestCase):
 
 
 class VaultRootResolutionTests(unittest.TestCase):
+    def test_example_configuration_contains_only_consumed_keys(self) -> None:
+        book_root = Path(__file__).resolve().parents[2]
+        configuration = json.loads(
+            book_root.joinpath("configuracion/local.ejemplo.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(configuration, {"vault_root": None})
+
+    def test_example_configuration_does_not_change_runtime_resolution(self) -> None:
+        with TemporaryDirectory() as temporary_directory:
+            vault_root = Path(temporary_directory)
+            book_root = vault_root / "libro_ml_dl"
+            configuration_directory = book_root / "configuracion"
+            configuration_directory.mkdir(parents=True)
+            configuration_directory.joinpath("local.ejemplo.json").write_text(
+                json.dumps({"vault_root": "/missing/example-only"}),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(resolve_vault_root(book_root), vault_root)
+
     def test_defaults_to_book_parent_without_local_configuration(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             vault_root = Path(temporary_directory)

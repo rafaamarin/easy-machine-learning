@@ -1,6 +1,3 @@
 {
-  "eurosat_root": null,
-  "vault_root": null,
-  "jupyter_kernel_tensorflow": "unir-tf",
-  "jupyter_kernel_pytorch": "unir-torch"
+  "vault_root": null
 }

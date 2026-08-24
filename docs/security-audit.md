@@ -1,19 +1,23 @@
-# Auditoría final de seguridad previa a publicación
+# Auditoría de seguridad candidata post-fix
 
 Fecha de ejecución: 2026-08-24.
 
-Candidato auditado: `f2dd2973527dcd26d8cf5c4d958b28ebc2e528c1`.
+Candidato base: `a81646b4f554409374c08b79c7f42f4a49d645c3`.
 
-Estado: **AUDITORÍA FINAL EN EL ALCANCE LOCAL PREVIO A PUBLICACIÓN**. La
-revisión independiente y su re-review concluyeron con 0 hallazgos Critical y 0
-Important abiertos. El ensayo desde clon limpio y los gates locales terminaron
-correctamente. Las limitaciones de navegador, automatización remota y un Minor
-de cobertura de inventario permanecen declaradas al final del documento.
+Estado: **CANDIDATA POST-FIX, PENDIENTE DE SCOPED RE-REVIEW**. La revisión final
+whole-branch de `40a99d7…a81646b` encontró 0 Critical, 6 Important y 6 Minor.
+Esta ola implementa correcciones para los 6 Important y los Minors de bajo
+riesgo asociados, pero no declara su cierre hasta recibir re-review acotada.
+No existe evidencia nueva de CI, navegador o remoto.
 
 ## Alcance e inventario del candidato
 
-El inventario se midió en un clon local limpio del candidato exacto, antes del
-commit que publica este documento:
+El inventario post-fix contiene 82 archivos candidatos (los 80 versionados en
+la base más el handler HTTP y su prueba), 0 symlinks, 0 archivos mayores de
+25 MiB y exactamente los 3 notebooks aprobados mediante inventario Git global.
+
+El inventario histórico siguiente pertenece al candidato previo `f2dd297…` y
+se conserva sólo como trazabilidad de la auditoría anterior:
 
 - Archivos versionados: 80; tamaño total: `2868713` bytes.
 - Enlaces simbólicos versionados: 0.
@@ -24,10 +28,9 @@ commit que publica este documento:
 - Notebooks versionados en todo el repositorio: exactamente 3, los tres
   aprobados y enumerados en Procedencia.
 
-Los artefactos creados por la instalación quedaron ignorados y el estado
-trackeado del clon permaneció limpio. Los conteos anteriores pertenecen al
-candidato `f2dd297…`; el commit documental posterior cambia el historial y el
-tamaño del árbol, pero no el código ni el material fuente.
+Los comandos completos y sus exits se registran también en el informe local
+ignorado; los valores históricos anteriores no se reutilizan como evidencia de
+la candidata actual.
 
 ## Procedencia
 
@@ -43,78 +46,88 @@ tamaño del árbol, pero no el código ni el material fuente.
 
 ## detect-secrets 1.5.0 e Historial Git
 
-- Árbol candidato: 0 secretos potenciales y 0 rutas personales.
-- Historial del candidato: 14 commits mediante `git rev-list --all`.
+- El gate candidato añade un segundo pase `--only-allowlisted` para árbol
+  actual, índice staged y cada snapshot del Historial Git.
+- El índice se materializa con `git write-tree`; los blobs staged se escanean
+  aunque el worktree contenga otra copia.
+- Historial base: 15 commits mediante `git rev-list --all`; la candidata añade
+  un único commit post-fix.
 - Cada commit se inventarió con `git ls-tree -rz --full-tree` y cada blob se
   materializó con `git cat-file` en un directorio temporal. `export-ignore` no
   puede excluir contenido histórico del escaneo.
-- Hallazgos históricos no adjudicados: 0.
-- Ocurrencias históricas adjudicadas: 10 en exactamente dos ubicaciones de
-  checksum conocidas. La adjudicación exige detector, sintaxis exacta, valor
-  aprobado y una única ocurrencia por ubicación y commit.
+- La candidata contiene 26 supresiones actuales verificadas. La adjudicación
+  exige ruta, línea, detector, sintaxis exacta, valor aprobado y exactamente una
+  ocurrencia por ubicación y commit; cualquier otra supresión falla redactada.
+- El gate precommit adjudicó `actual=26`, `indice=26` e `historial=296`. El
+  único snapshot nuevo contiene esas mismas 26 ubicaciones, por lo que el gate
+  fresco postcommit debe adjudicar `historial=322`; el resultado ejecutado se
+  conserva en el informe local ignorado.
 - Los informes muestran exclusivamente commit, ruta, línea y detector; nunca
   el valor candidato. Los fallos de Git o de las herramientas producen una
   categoría segura y hacen fallar el gate.
 
 La validación cubre además rutas normalmente excluidas, blobs con
 `export-ignore`, nombres con controles, nombres no UTF-8, symlinks, gitlinks,
-modos no permitidos, rutas inseguras y duplicados.
+modos no permitidos, rutas inseguras, duplicados y colisiones portables mediante
+normalización Unicode NFD más `casefold()` antes de materializar cualquier blob.
 
 ## pip-audit 2.10.1
 
-- Dependencias auditadas desde el lockfile: 124.
-- Vulnerabilidades conocidas encontradas: 0.
-- El gate del clon terminó con `SEGURIDAD_PUBLICACION_OK`.
+- El gate local actual completó `pip-audit` bajo macOS/Python 3.11 sin
+  vulnerabilidades conocidas; no se extrapola a Python 3.13.
+- El workflow candidato usa una matriz explícita Ubuntu/Python 3.11 y
+  macOS/Python 3.13, con `UV_PYTHON` ligado a cada entrada, sync locked y el gate
+  completo. Así la rama `scipy` para Python >=3.12 se auditará en su entorno.
+- La matriz no se ha ejecutado en GitHub Actions.
 
 ## Notebooks
 
 Modo: auditoría y reproducibilidad. Audiencia: estudiante en español. Entradas:
 exactamente los tres notebooks aprobados. Cada notebook se copia byte a byte a
 un directorio temporal, se ejecuta con cwd temporal y conserva el path original
-sólo en el resumen. Una comprobación en `finally` protege y, si fuese necesario,
-restaura el fuente incluso cuando `nbclient` falla:
+sólo en el resumen. Si el fuente cambia concurrentemente, la ejecución falla y
+preserva los bytes nuevos; nunca escribe ni restaura el notebook original:
 
 - `01-series-dataframes.ipynb`: 23 celdas de código, 0 errores.
 - `07-estadisticas-basicas.ipynb`: 40 celdas de código, 0 errores.
 - `05-scale.ipynb`: 14 celdas de código, 0 errores.
 
-La ejecución del clon informó 23/40/14 celdas de código, 0 errores y 3/3 hashes
-idénticos. No se reescribió ningún notebook fuente.
+La ejecución post-fix confirmó 23/40/14 celdas de código, 0 errores y hashes
+pre/post idénticos en los tres fuentes.
 
 ## Gate funcional y commit documental
 
 `verificar.sh` conserva `git diff --check` y además falla con un mensaje
 genérico cuando `git status --porcelain --untracked-files=all` detecta cambios
 modified, staged o untracked. Los artefactos ignorados permanecen permitidos.
-Por diseño, al modificar este documento la ejecución precommit completa todos
-los checks funcionales y falla únicamente en ese control final de worktree
-sucio. Tras crear el commit documental se repiten ambos gates sobre el árbol
-trackeado limpio; esa evidencia postcommit se conserva en el informe de trabajo
-ignorado para evitar una retroedición circular de esta auditoría.
+Las pruebas de publicación se ejecutan ahora con el Python seleccionado por
+`uv` tanto localmente como en `validar.yml`. El gate precommit completó pruebas,
+Ruff, contenido y notebooks, y devolvió exit 1 únicamente por el árbol dirty;
+la evidencia postcommit se conserva en el informe de trabajo ignorado.
 
 ## Aceptación local y navegador
 
-Se ejecutó `./instalar.sh --yes` y el runtime local terminó con
-`PYODIDE_LOCAL_OK`. El launcher real se inició con
-`./lanzar.sh --sin-jupyter --sin-navegador`, ligado a loopback. La portada y el
-recurso principal de Pyodide respondieron HTTP 200. El proceso se detuvo
-limpiamente con SIGINT y se comprobó que dejó de escuchar.
+La candidata sustituye el docroot amplio por una allowlist de portada, assets
+requeridos, runtime Pyodide y contenido construido; rechaza listados, dotfiles,
+symlinks, escapes, configuración, scripts, fuentes, locks y `Host` que no sea
+loopback con el puerto real. GET y HEAD tienen pruebas HTTP reales. Un smoke del
+launcher confirmó recurso público y HEAD con 200, rutas privadas y Host atacante
+sin 200, cierre limpio por Ctrl-C y puerto liberado.
 
-La aceptación interactiva de UI no se ejecutó. Tanto implementer como controller
-confirmaron que la lista de navegadores controlables fue `[]`. Por ello no se
+La aceptación interactiva de UI no se ejecutó. Por ello no se
 afirma haber ejecutado visualmente un ejercicio, cambiado la salida mediante un
 hiperparámetro, abierto/cerrado una solución ni inspeccionado consola y red.
 
 ## Clon limpio
 
-Se creó un clon local temporal desde el candidato exacto. La comprobación
-inicial confirmó:
+El Clon limpio documentado abajo corresponde a `f2dd297…`, no a esta candidata.
+La comprobación anterior confirmó:
 
 - `.venv`: ausente.
 - Payload local de Pyodide: 0 archivos; sólo estaba el `.gitkeep` versionado.
 - `configuracion/local.json`: ausente.
 
-Resultados live dentro del clon:
+Resultados históricos dentro de aquel clon:
 
 - `./instalar.sh --yes`: exit 0; `PYODIDE_LOCAL_OK` una vez.
 - `./verificar.sh`: exit 0; `VERIFICACION_COMPLETA_OK` una vez.
@@ -133,24 +146,25 @@ quedó recuperable en la Papelera.
 
 ## Revisión independiente
 
-Revisor: `/root/task_8_independent_reviewer`.
+La revisión whole-branch final verificó 0 Critical, 6 Important y 6 Minor sobre
+la base `a81646b…`. Los 6 Important fueron: fallback Jupyter, superficie HTTP,
+supresiones, colisiones APFS, concurrencia de notebooks y matriz de dependencias.
+Las correcciones de esta candidata esperan scoped re-review; no se declara un
+veredicto de publicación.
 
-- Revisión integral original, rango `40a99d7..d6c838e`: 0 Critical, 5
-  Important y 4 Minor.
-- Re-review de correcciones, rango `d6c838e..f2dd297`: PASS; los 5 Important
-  quedaron cerrados y no aparecieron nuevos Critical ni Important.
-- Veredicto final: 0 Critical y 0 Important abiertos.
-
-Tres Minor quedaron corregidos. Se difiere deliberadamente uno: el inventario
-live global confirma exactamente tres `.ipynb`, pero el test automatizado de
-inventario exacto sólo recorre `material_fuente/**/*.ipynb`; no impediría que
-en el futuro se versionara un notebook adicional fuera de ese árbol.
+Los Minors asociados se corrigen con inventario global mediante
+`git ls-files -z '*.ipynb'`, escaneo del índice, Python de publicación ligado a
+`uv`, documentación de Python gestionado y configuración ejemplo mínima.
 
 ## Limitaciones
 
-- Minor abierto: el guard automatizado de inventario exacto sólo protege
-  `material_fuente/**/*.ipynb`, aunque el inventario global live contiene
-  exactamente los tres notebooks aprobados.
+- Minor diferido: las descargas de Pyodide aún no incorporan timeout ni límite
+  de bytes. Se mantiene fuera de esta ola para no alterar descargas grandes sin
+  una verificación de tamaños y reintentos suficientemente conservadora.
+- No se añade timeout automático a la ejecución Pyodide: la cancelación manual
+  existente se conserva y este cambio queda explícitamente fuera del alcance.
+- La scoped re-review sigue pendiente; los gates postcommit, aunque estén
+  verdes en el informe local, no sustituyen ese veredicto independiente.
 - La aceptación interactiva de navegador no fue posible; sólo existe evidencia
   HTTP loopback y del recurso principal de Pyodide con respuesta 200.
 - GitHub Actions, protección de ramas, secret scanning, push protection y las

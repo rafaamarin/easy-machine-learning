@@ -16,7 +16,8 @@ uv run --locked --group validation --group notebooks \
   python scripts/validar_notebooks.py
 
 cd "$repo_root"
-python3 -m unittest discover -s pruebas_publicacion -p 'test_*.py' -v
+uv run --project "$book_root" --locked --group validation \
+  python -m unittest discover -s pruebas_publicacion -p 'test_*.py' -v
 git diff --check
 if test -n "$(git status --porcelain --untracked-files=all)"; then
   printf '%s\n' 'ERROR: el árbol de trabajo contiene cambios sin confirmar.' >&2

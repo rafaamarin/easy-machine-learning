@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -27,6 +28,9 @@ PERSONAL_PATH_MARKERS = (
     f"/home/{PERSONAL_USER}/",
     f"C:\\Users\\{PERSONAL_USER}\\",
 )
+PERSONAL_PATH_MARKER_BYTES = tuple(
+    marker.encode("ascii") for marker in PERSONAL_PATH_MARKERS
+)
 SECRET_SCAN_CHUNK_SIZE = 200
 APPROVED_CORE_SHA256 = "".join(
     (
@@ -41,13 +45,8 @@ APPROVED_CORE_SHA256 = "".join(
     )
 )
 APPROVED_ABC_SHA256 = hashlib.sha256(b"abc").hexdigest()
-CORE_CHECKSUM_PATTERN = re.compile(
-    r'^CORE_SHA256 = "([0-9a-f]{64})"'
-    r"(?:  # pragma: allowlist secret  # noqa: E501)?$"
-)
-ABC_CHECKSUM_PATTERN = re.compile(
-    r'^ {16}"([0-9a-f]{64})",'
-    r"(?:  # pragma: allowlist secret  # noqa: E501)?$"
+ALLOWLIST_PRAGMA_PATTERN_BYTES = re.compile(
+    rb"# pragma: allowlist secret(?:  # noqa: E501)?$"
 )
 
 
@@ -56,6 +55,22 @@ class SecretFinding:
     path: str
     line_number: int
     detector_type: str
+
+
+@dataclass(frozen=True, order=True)
+class SecretApproval:
+    path: str
+    line_number: int
+    detector_type: str
+    approved_value: str
+    exact_syntax: str
+
+
+@dataclass(frozen=True)
+class SecretScanResult:
+    rejected: tuple[SecretFinding, ...]
+    adjudicated: tuple[SecretFinding, ...]
+    personal_findings: tuple[SecretFinding, ...]
 
 
 @dataclass(frozen=True, order=True)
@@ -77,6 +92,140 @@ class HistoricalScanError(RuntimeError):
     def __init__(self, findings: list[HistoricalFinding]) -> None:
         self.findings = sorted(findings)
         super().__init__("hallazgos históricos no adjudicados")
+
+
+def _joined(*chunks: str) -> str:
+    return "".join(chunks)
+
+
+APPROVED_NOTEBOOK_PARTS = (
+    _joined("15f0a0f4", "137ba811", "17f8bacf", "90dbd341"),
+    _joined("82833596", "3191b2fd", "c3a21365", "0df510ea"),
+    _joined("f4352008", "a8f973f4", "96dba58c", "08740b25"),
+    _joined("0daac81b", "20b94ba3", "b1eac86b", "2221e30a"),
+    _joined("894a588d", "2eb24d02", "d032ac61", "a2f2961e"),
+    _joined("ef1920a9", "c6cfdb17", "e50948d0", "612dbeaf"),
+)
+APPROVED_ACTION_PARTS = (
+    _joined("3d3c42e5", "aac5ba80", "5825da76"),
+    _joined("410c1812", "73ba90b1"),
+    _joined("c771a70e", "6277c0a9", "9b617c7a"),
+    _joined("806ffeda", "ca235ff9"),
+    _joined("82076278", "6026740c", "76f36085"),
+    _joined("b0efc47a", "31fe5020"),
+)
+
+
+def _approval(
+    path: str,
+    line_number: int,
+    value: str,
+    exact_syntax: str,
+) -> SecretApproval:
+    return SecretApproval(
+        path=path,
+        line_number=line_number,
+        detector_type="Hex High Entropy String",
+        approved_value=value,
+        exact_syntax=exact_syntax,
+    )
+
+
+def _approved_secret_registry() -> tuple[SecretApproval, ...]:
+    records = [
+        _approval(
+            "libro_ml_dl/scripts/preparar_entorno.py",
+            17,
+            APPROVED_CORE_SHA256,
+            f'CORE_SHA256 = "{APPROVED_CORE_SHA256}"',
+        ),
+        _approval(
+            "libro_ml_dl/scripts/preparar_entorno.py",
+            17,
+            APPROVED_CORE_SHA256,
+            f'CORE_SHA256 = "{APPROVED_CORE_SHA256}"  '
+            "# pragma: allowlist secret  # noqa: E501",
+        ),
+        _approval(
+            "libro_ml_dl/pruebas/python/test_preparar_entorno.py",
+            81,
+            APPROVED_ABC_SHA256,
+            f'                "{APPROVED_ABC_SHA256}",',
+        ),
+        _approval(
+            "libro_ml_dl/pruebas/python/test_preparar_entorno.py",
+            81,
+            APPROVED_ABC_SHA256,
+            f'                "{APPROVED_ABC_SHA256}",  '
+            "# pragma: allowlist secret  # noqa: E501",
+        ),
+    ]
+    for notebook_lines in (
+        (12, 13, 16, 17, 20, 21),
+        (13, 14, 17, 18, 21, 22),
+    ):
+        for line_number, value in zip(
+            notebook_lines,
+            APPROVED_NOTEBOOK_PARTS,
+            strict=True,
+        ):
+            syntax = f'        "{value}"  # pragma: allowlist secret'
+            records.append(
+                _approval(
+                    "pruebas_publicacion/test_material_fuente.py",
+                    line_number,
+                    value,
+                    syntax,
+                )
+            )
+    for line_number, value in zip(
+        (71, 72, 75, 76, 79, 80),
+        APPROVED_NOTEBOOK_PARTS,
+        strict=True,
+    ):
+        syntax = f'        "{value}"  # pragma: allowlist secret'
+        records.append(
+            _approval(
+                "docs/superpowers/plans/"
+                "2026-08-23-easy-machine-learning-publication.md",
+                line_number,
+                value,
+                syntax,
+            )
+        )
+    for line_number, value in zip(
+        (10, 11, 14, 15, 18, 19),
+        APPROVED_ACTION_PARTS,
+        strict=True,
+    ):
+        syntax = f'    "{value}"  # pragma: allowlist secret'
+        records.append(
+            _approval(
+                "pruebas_publicacion/test_ci_config.py",
+                line_number,
+                value,
+                syntax,
+            )
+        )
+    for line_number, value in zip(
+        (1639, 1640, 1643, 1644, 1647, 1648),
+        APPROVED_ACTION_PARTS,
+        strict=True,
+    ):
+        syntax = f'    "{value}"  # pragma: allowlist secret'
+        records.append(
+            _approval(
+                "docs/superpowers/plans/"
+                "2026-08-23-easy-machine-learning-publication.md",
+                line_number,
+                value,
+                syntax,
+            )
+        )
+    return tuple(records)
+
+
+APPROVED_SECRET_REGISTRY = _approved_secret_registry()
 
 
 def parse_secret_results(payload: dict[str, Any]) -> list[SecretFinding]:
@@ -207,12 +356,12 @@ def _find_personal_path_findings(
     candidate_files = _candidate_files(repo_root) if candidates is None else candidates
     for path in candidate_files:
         try:
-            source = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
+            source = path.read_bytes()
+        except OSError as error:
+            raise RuntimeError("no se pudo inspeccionar una ruta personal") from error
         relative_path = path.relative_to(repo_root).as_posix()
         for line_number, line in enumerate(source.splitlines(), start=1):
-            if any(marker in line for marker in PERSONAL_PATH_MARKERS):
+            if any(marker in line for marker in PERSONAL_PATH_MARKER_BYTES):
                 findings.append(
                     SecretFinding(relative_path, line_number, "Ruta personal")
                 )
@@ -231,6 +380,8 @@ def find_personal_paths(repo_root: Path) -> list[Path]:
 def run_secret_scan(
     repo_root: Path,
     candidates: list[Path] | None = None,
+    *,
+    only_allowlisted: bool = False,
 ) -> list[SecretFinding]:
     executable = shutil.which("detect-secrets")
     if executable is None:
@@ -240,14 +391,11 @@ def run_secret_scan(
     for start in range(0, len(candidate_files), SECRET_SCAN_CHUNK_SIZE):
         chunk = candidate_files[start : start + SECRET_SCAN_CHUNK_SIZE]
         relative_paths = [path.relative_to(repo_root).as_posix() for path in chunk]
+        command = [executable, "scan", "--no-verify"]
+        if only_allowlisted:
+            command.append("--only-allowlisted")
         completed = subprocess.run(
-            [
-                executable,
-                "scan",
-                "--no-verify",
-                "--",
-                *relative_paths,
-            ],
+            [*command, "--", *relative_paths],
             cwd=repo_root,
             check=False,
             capture_output=True,
@@ -259,45 +407,122 @@ def run_secret_scan(
     return _normalize_secret_paths(findings, repo_root)
 
 
+def _suppression_locations(
+    repo_root: Path,
+    candidates: list[Path],
+) -> set[tuple[str, int]]:
+    locations: set[tuple[str, int]] = set()
+    for path in candidates:
+        try:
+            source = path.read_bytes()
+        except OSError as error:
+            raise RuntimeError("no se pudo inspeccionar una supresión") from error
+        relative_path = path.relative_to(repo_root).as_posix()
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            if ALLOWLIST_PRAGMA_PATTERN_BYTES.search(line):
+                locations.add((relative_path, line_number))
+    return locations
+
+
+def _allowlist_candidate_files(candidates: list[Path]) -> list[Path]:
+    marker = b"# pragma: allowlist secret"
+    selected: list[Path] = []
+    for path in candidates:
+        try:
+            if marker in path.read_bytes():
+                selected.append(path)
+        except OSError as error:
+            raise RuntimeError("no se pudo inspeccionar una supresión") from error
+    return selected
+
+
+def _is_approved_secret(
+    snapshot_root: Path,
+    finding: SecretFinding,
+) -> bool:
+    matching_records = [
+        record
+        for record in APPROVED_SECRET_REGISTRY
+        if (
+            record.path == finding.path
+            and record.line_number == finding.line_number
+            and record.detector_type == finding.detector_type
+        )
+    ]
+    if not matching_records:
+        return False
+    try:
+        source_line = (
+            snapshot_root.joinpath(finding.path)
+            .read_text(encoding="utf-8")
+            .splitlines()[finding.line_number - 1]
+        )
+    except (IndexError, OSError, UnicodeDecodeError):
+        return False
+    return any(
+        source_line == record.exact_syntax
+        and source_line.count(record.approved_value) == 1
+        for record in matching_records
+    )
+
+
+def scan_security_snapshot(
+    repo_root: Path,
+    candidates: list[Path] | None = None,
+) -> SecretScanResult:
+    candidate_files = _candidate_files(repo_root) if candidates is None else candidates
+    normal_findings = run_secret_scan(repo_root, candidate_files)
+    allowlist_candidates = _allowlist_candidate_files(candidate_files)
+    allowlisted_findings = (
+        run_secret_scan(
+            repo_root,
+            allowlist_candidates,
+            only_allowlisted=True,
+        )
+        if allowlist_candidates
+        else []
+    )
+    combined = [*normal_findings, *allowlisted_findings]
+    allowlisted_locations = {
+        (finding.path, finding.line_number) for finding in allowlisted_findings
+    }
+    for path, line_number in sorted(
+        _suppression_locations(repo_root, candidate_files) - allowlisted_locations
+    ):
+        combined.append(SecretFinding(path, line_number, "Supresión no registrada"))
+    location_counts = Counter(
+        (finding.path, finding.line_number) for finding in combined
+    )
+    rejected: list[SecretFinding] = []
+    adjudicated: list[SecretFinding] = []
+    for finding in combined:
+        location = (finding.path, finding.line_number)
+        if location_counts[location] == 1 and _is_approved_secret(
+            repo_root,
+            finding,
+        ):
+            adjudicated.append(finding)
+        else:
+            rejected.append(finding)
+    personal_findings = _find_personal_path_findings(repo_root, candidate_files)
+    return SecretScanResult(
+        rejected=tuple(sorted(rejected)),
+        adjudicated=tuple(sorted(adjudicated)),
+        personal_findings=tuple(personal_findings),
+    )
+
+
 def _is_adjudicated_checksum(
     snapshot_root: Path,
     finding: SecretFinding,
 ) -> bool:
-    if finding.detector_type != "Hex High Entropy String":
-        return False
-    known_location = (finding.path, finding.line_number)
-    if known_location not in {
-        ("libro_ml_dl/scripts/preparar_entorno.py", 17),
-        ("libro_ml_dl/pruebas/python/test_preparar_entorno.py", 81),
-    }:
-        return False
-    try:
-        source_lines = (
-            snapshot_root.joinpath(finding.path)
-            .read_text(encoding="utf-8")
-            .splitlines()
-        )
-        target_line = source_lines[finding.line_number - 1]
-    except (IndexError, OSError, UnicodeDecodeError):
-        return False
-    if len(re.findall(r"[0-9a-fA-F]{64}", target_line)) != 1:
-        return False
-    if known_location[0].endswith("scripts/preparar_entorno.py"):
-        match = CORE_CHECKSUM_PATTERN.fullmatch(target_line)
-        return match is not None and match.group(1) == APPROVED_CORE_SHA256
-    match = ABC_CHECKSUM_PATTERN.fullmatch(target_line)
-    if match is None or match.group(1) != APPROVED_ABC_SHA256:
-        return False
-    context_start = max(0, finding.line_number - 8)
-    context = "\n".join(source_lines[context_start : finding.line_number])
-    return "test_sha256_file_uses_file_bytes" in context and (
-        "sha256_file(path)" in context
-    )
+    return _is_approved_secret(snapshot_root, finding)
 
 
 def _parse_git_tree_entries(payload: bytes) -> list[GitTreeEntry]:
     entries: list[GitTreeEntry] = []
     seen_paths: set[str] = set()
+    portable_paths: dict[str, str] = {}
     for raw_entry in payload.split(b"\0"):
         if not raw_entry:
             continue
@@ -324,6 +549,12 @@ def _parse_git_tree_entries(payload: bytes) -> list[GitTreeEntry]:
         if path in seen_paths:
             raise RuntimeError("el historial contiene una ruta duplicada")
         seen_paths.add(path)
+        portable_path = unicodedata.normalize("NFD", path).casefold()
+        if portable_path in portable_paths:
+            raise RuntimeError(
+                "el historial contiene una colisión Unicode o de mayúsculas"
+            )
+        portable_paths[portable_path] = path
         if mode == "120000":
             raise RuntimeError("el historial contiene un enlace simbólico")
         if mode == "160000" or object_type == "commit":
@@ -387,6 +618,33 @@ def _git_commits(repo_root: Path) -> list[str]:
     return commits
 
 
+def _git_index_tree(repo_root: Path) -> str:
+    completed = subprocess.run(
+        ["git", "write-tree"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError("Git no pudo materializar el índice")
+    try:
+        tree_id = completed.stdout.decode("ascii", errors="strict").strip()
+    except UnicodeDecodeError as error:
+        raise RuntimeError("Git devolvió un índice no válido") from error
+    if re.fullmatch(r"[0-9a-f]{40,64}", tree_id) is None:
+        raise RuntimeError("Git devolvió un índice no válido")
+    return tree_id
+
+
+def scan_git_index(repo_root: Path) -> SecretScanResult:
+    tree_id = _git_index_tree(repo_root)
+    with tempfile.TemporaryDirectory(prefix="easy_ml_index_") as directory:
+        snapshot_root = Path(directory) / "snapshot"
+        snapshot_root.mkdir()
+        candidates = _materialize_commit(repo_root, tree_id, snapshot_root)
+        return scan_security_snapshot(snapshot_root, candidates)
+
+
 def scan_git_history(repo_root: Path) -> list[HistoricalFinding]:
     adjudicated: list[HistoricalFinding] = []
     rejected: list[HistoricalFinding] = []
@@ -395,27 +653,24 @@ def scan_git_history(repo_root: Path) -> list[HistoricalFinding]:
             snapshot_root = Path(directory) / "snapshot"
             snapshot_root.mkdir()
             candidates = _materialize_commit(repo_root, commit, snapshot_root)
-            secret_findings = run_secret_scan(snapshot_root, candidates)
-            personal_findings = _find_personal_path_findings(
-                snapshot_root,
-                candidates,
-            )
-            location_counts = Counter(
-                (finding.path, finding.line_number) for finding in secret_findings
-            )
-            for finding in [*secret_findings, *personal_findings]:
+            result = scan_security_snapshot(snapshot_root, candidates)
+            for finding in result.adjudicated:
                 historical_finding = HistoricalFinding(
                     commit=commit,
                     path=finding.path,
                     line_number=finding.line_number,
                     detector_type=finding.detector_type,
                 )
-                if location_counts[
-                    (finding.path, finding.line_number)
-                ] == 1 and _is_adjudicated_checksum(snapshot_root, finding):
-                    adjudicated.append(historical_finding)
-                else:
-                    rejected.append(historical_finding)
+                adjudicated.append(historical_finding)
+            for finding in [*result.rejected, *result.personal_findings]:
+                rejected.append(
+                    HistoricalFinding(
+                        commit=commit,
+                        path=finding.path,
+                        line_number=finding.line_number,
+                        detector_type=finding.detector_type,
+                    )
+                )
     if rejected:
         raise HistoricalScanError(rejected)
     return sorted(adjudicated)
@@ -464,14 +719,14 @@ def run_dependency_audit(book_root: Path) -> None:
 
 def main() -> int:
     try:
-        findings = run_secret_scan(REPO_ROOT)
+        current_result = scan_security_snapshot(REPO_ROOT)
     except Exception:
         print("ERROR_SEGURIDAD: ESCANEO_SECRETOS", file=sys.stderr)
         return 2
     try:
-        personal_paths = find_personal_paths(REPO_ROOT)
+        index_result = scan_git_index(REPO_ROOT)
     except Exception:
-        print("ERROR_SEGURIDAD: RUTAS_PERSONALES", file=sys.stderr)
+        print("ERROR_SEGURIDAD: INDICE_GIT", file=sys.stderr)
         return 2
     try:
         historical_findings = scan_git_history(REPO_ROOT)
@@ -482,25 +737,39 @@ def main() -> int:
     except Exception:
         print("ERROR_SEGURIDAD: HISTORIAL_GIT", file=sys.stderr)
         return 2
-    if findings:
-        for line in render_secret_findings(findings):
+    if current_result.rejected:
+        for line in render_secret_findings(list(current_result.rejected)):
             print(f"POTENCIAL_SECRETO: {line}", file=sys.stderr)
-    if personal_paths:
-        for path in personal_paths:
-            relative_path = path.relative_to(REPO_ROOT).as_posix()
+    if index_result.rejected:
+        for line in render_secret_findings(list(index_result.rejected)):
+            print(f"POTENCIAL_SECRETO_INDICE: {line}", file=sys.stderr)
+    for prefix, personal_findings in (
+        ("RUTA_PERSONAL", current_result.personal_findings),
+        ("RUTA_PERSONAL_INDICE", index_result.personal_findings),
+    ):
+        for finding in personal_findings:
             print(
-                f"RUTA_PERSONAL: {_escape_metadata(relative_path)}",
+                f"{prefix}: {_escape_metadata(finding.path)}",
                 file=sys.stderr,
             )
-    if findings or personal_paths:
+    if (
+        current_result.rejected
+        or index_result.rejected
+        or current_result.personal_findings
+        or index_result.personal_findings
+    ):
         return 1
-    for line in render_historical_findings(historical_findings):
-        print(f"CHECKSUM_HISTORICO_ADJUDICADO: {line}")
     try:
         run_dependency_audit(BOOK_ROOT)
     except Exception:
         print("ERROR_SEGURIDAD: AUDITORIA_DEPENDENCIAS", file=sys.stderr)
         return 2
+    print(
+        "SUPRESIONES_ADJUDICADAS "
+        f"actual={len(current_result.adjudicated)} "
+        f"indice={len(index_result.adjudicated)} "
+        f"historial={len(historical_findings)}"
+    )
     print("SEGURIDAD_PUBLICACION_OK")
     return 0
 

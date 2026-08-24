@@ -62,6 +62,37 @@ class ContinuousIntegrationTests(unittest.TestCase):
             r"      UV_PYTHON: \$\{\{ matrix\.python \}\}",
         )
 
+    def test_security_matrix_binds_each_os_to_its_python(self) -> None:
+        source = REPO_ROOT.joinpath(
+            ".github", "workflows", "seguridad.yml"
+        ).read_text(encoding="utf-8")
+        for entry in (
+            '- os: ubuntu-latest\n            python: "3.11"',
+            '- os: macos-latest\n            python: "3.13"',
+        ):
+            self.assertIn(entry, source)
+        self.assertIn("runs-on: ${{ matrix.os }}", source)
+        self.assertIn("UV_PYTHON: ${{ matrix.python }}", source)
+        self.assertIn("python-version: ${{ matrix.python }}", source)
+        self.assertIn(
+            "uv sync --locked --group validation --group notebooks --group security",
+            source,
+        )
+        self.assertIn("./verificar_seguridad.sh", source)
+
+    def test_validation_publication_tests_use_project_uv_python(self) -> None:
+        source = REPO_ROOT.joinpath(
+            ".github", "workflows", "validar.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "uv run --project libro_ml_dl --locked --group validation",
+            source,
+        )
+        self.assertNotIn(
+            "run: python3 -m unittest discover -s pruebas_publicacion",
+            source,
+        )
+
     def test_dependabot_covers_uv_and_github_actions(self) -> None:
         source = REPO_ROOT.joinpath(
             ".github", "dependabot.yml"
