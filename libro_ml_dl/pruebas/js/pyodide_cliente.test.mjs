@@ -246,3 +246,100 @@ test("listener exceptions cannot prevent failed-worker cleanup", async () => {
   assert.equal(worker.terminated, true);
   assert.equal(session.worker, null);
 });
+
+test("settles a result before a throwing listener starts a retry", async () => {
+  const worker = new FakeWorker();
+  const session = new PyodideSession({
+    worker_factory: () => worker,
+    worker_url: "worker.mjs",
+  });
+  let retry;
+  session.subscribe((message) => {
+    if (message.type === "result" && message.lab_id === "first") {
+      retry = session.run("retry", "2 + 2", []);
+      retry.catch(() => {});
+      throw new Error("listener failure");
+    }
+  });
+
+  const first = session.run("first", "1 + 1", []);
+  const request_id = worker.messages[0].request_id;
+  assert.throws(
+    () =>
+      worker.emit({
+        type: "result",
+        request_id,
+        lab_id: "first",
+        payload: { value: "2" },
+      }),
+    /listener failure/,
+  );
+
+  assert.equal(session.pending?.lab_id, "retry");
+  assert.deepEqual(
+    await Promise.race([
+      first,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("first result not settled")), 100),
+      ),
+    ]),
+    { value: "2" },
+  );
+  const retry_request_id = worker.messages.at(-1).request_id;
+  worker.emit({
+    type: "result",
+    request_id: retry_request_id,
+    lab_id: "retry",
+    payload: { value: "4" },
+  });
+  assert.deepEqual(await retry, { value: "4" });
+});
+
+test("settles an error before a throwing listener starts a retry", async () => {
+  const worker = new FakeWorker();
+  const session = new PyodideSession({
+    worker_factory: () => worker,
+    worker_url: "worker.mjs",
+  });
+  let retry;
+  session.subscribe((message) => {
+    if (message.type === "error" && message.lab_id === "first") {
+      retry = session.run("retry", "2 + 2", []);
+      retry.catch(() => {});
+      throw new Error("listener failure");
+    }
+  });
+
+  const first = session.run("first", "raise RuntimeError", []);
+  first.catch(() => {});
+  const request_id = worker.messages[0].request_id;
+  assert.throws(
+    () =>
+      worker.emit({
+        type: "error",
+        request_id,
+        lab_id: "first",
+        payload: { message: "terminal failure" },
+      }),
+    /listener failure/,
+  );
+
+  assert.equal(session.pending?.lab_id, "retry");
+  await assert.rejects(
+    Promise.race([
+      first,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("first error not settled")), 100),
+      ),
+    ]),
+    /terminal failure/,
+  );
+  const retry_request_id = worker.messages.at(-1).request_id;
+  worker.emit({
+    type: "result",
+    request_id: retry_request_id,
+    lab_id: "retry",
+    payload: { value: "4" },
+  });
+  assert.deepEqual(await retry, { value: "4" });
+});

@@ -36,6 +36,16 @@ class SourceMaterialTests(unittest.TestCase):
         for relative_path, expected_hash in EXPECTED_HASHES.items():
             self.assertEqual(sha256_file(REPO_ROOT / relative_path), expected_hash)
 
+    def test_notebook_inventory_contains_exactly_the_three_approved_files(
+        self,
+    ) -> None:
+        material_root = REPO_ROOT / "material_fuente"
+        actual = {
+            path.relative_to(REPO_ROOT).as_posix()
+            for path in material_root.rglob("*.ipynb")
+        }
+        self.assertEqual(actual, set(EXPECTED_HASHES))
+
     def test_source_map_uses_repository_relative_notebook_paths(self) -> None:
         source_map_path = (
             REPO_ROOT / "libro_ml_dl/contenido_fuente/mapa_fuentes.json"

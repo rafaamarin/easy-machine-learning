@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import nbformat
 from nbclient.exceptions import CellExecutionError
 
-from scripts.validar_notebooks import execute_notebook
+from scripts.validar_notebooks import execute_notebook, project_kernel_path
 
 
 class NotebookExecutionTests(unittest.TestCase):
@@ -42,6 +44,69 @@ class NotebookExecutionTests(unittest.TestCase):
             )
             with self.assertRaises(CellExecutionError):
                 execute_notebook(path)
+
+    def test_relative_writes_cannot_modify_source_siblings(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            sibling = root / "sibling.txt"
+            sibling.write_text("original", encoding="utf-8")
+            path = self._write_notebook(
+                root,
+                "from pathlib import Path\n"
+                "Path('sibling.txt').write_text('changed', encoding='utf-8')",
+            )
+            execute_notebook(path)
+
+            self.assertEqual(sibling.read_text(encoding="utf-8"), "original")
+
+    def test_relative_self_mutation_changes_only_disposable_copy(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._write_notebook(
+                root,
+                "from pathlib import Path\n"
+                "Path('demo.ipynb').write_text('mutated', encoding='utf-8')",
+            )
+            original = path.read_bytes()
+
+            summary = execute_notebook(path)
+
+            self.assertEqual(summary.path, path)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_absolute_mutation_is_restored_even_when_execution_fails(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._write_notebook(root, "pass")
+            path = self._write_notebook(
+                root,
+                "from pathlib import Path\n"
+                f"Path({str(path)!r}).write_text('mutated', encoding='utf-8')\n"
+                "raise RuntimeError('fallo tras mutación')",
+            )
+            original = path.read_bytes()
+
+            with self.assertRaisesRegex(RuntimeError, "notebook fuente") as raised:
+                execute_notebook(path)
+
+            self.assertEqual(path.read_bytes(), original)
+            self.assertIsInstance(raised.exception.__context__, CellExecutionError)
+
+    def test_project_kernel_path_restores_previous_value_after_error(self) -> None:
+        with patch.dict(os.environ, {"JUPYTER_PATH": "previous"}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+                with project_kernel_path():
+                    self.assertNotEqual(os.environ["JUPYTER_PATH"], "previous")
+                    raise RuntimeError("synthetic failure")
+            self.assertEqual(os.environ["JUPYTER_PATH"], "previous")
+
+    def test_project_kernel_path_removes_temporary_value_after_error(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "synthetic failure"):
+                with project_kernel_path():
+                    self.assertIn("JUPYTER_PATH", os.environ)
+                    raise RuntimeError("synthetic failure")
+            self.assertNotIn("JUPYTER_PATH", os.environ)
 
 
 if __name__ == "__main__":

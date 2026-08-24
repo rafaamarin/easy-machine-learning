@@ -58,14 +58,15 @@ export class PyodideSession {
 
   handle_message(message) {
     if (!this.pending || message.request_id !== this.pending.request_id) return;
-    for (const listener of this.listeners) listener(message);
+    const completed_pending = this.pending;
     if (message.type === "result") {
-      this.pending.resolve(message.payload);
       this.pending = null;
+      completed_pending.resolve(message.payload);
     } else if (message.type === "error") {
-      this.pending.reject(new Error(message.payload.message));
       this.pending = null;
+      completed_pending.reject(new Error(message.payload.message));
     }
+    for (const listener of this.listeners) listener(message);
   }
 
   cancel() {

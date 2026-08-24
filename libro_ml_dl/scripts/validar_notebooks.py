@@ -71,25 +71,48 @@ def project_kernel_path() -> Iterator[None]:
 
 
 def execute_notebook(path: Path) -> NotebookExecutionSummary:
-    original_hash = sha256_file(path)
-    notebook = nbformat.read(path, as_version=4)
-    with project_kernel_path():
-        client = NotebookClient(
-            notebook,
-            timeout=180,
-            kernel_name=KERNEL_NAME,
-            resources={"metadata": {"path": str(path.parent)}},
-        )
-        client.execute()
-    if sha256_file(path) != original_hash:
-        raise RuntimeError(f"el notebook fuente cambió durante la ejecución: {path}")
-    code_cells = sum(cell.cell_type == "code" for cell in notebook.cells)
-    error_outputs = sum(
-        output.output_type == "error"
-        for cell in notebook.cells
-        for output in cell.get("outputs", [])
-    )
-    return NotebookExecutionSummary(path, code_cells, error_outputs)
+    original_bytes = path.read_bytes()
+    try:
+        with TemporaryDirectory(prefix="easy_ml_notebook_") as directory:
+            execution_root = Path(directory)
+            execution_path = execution_root / path.name
+            execution_path.write_bytes(original_bytes)
+            if execution_path.read_bytes() != original_bytes:
+                raise RuntimeError("la copia temporal del notebook no es idéntica")
+            notebook = nbformat.read(execution_path, as_version=4)
+            with project_kernel_path():
+                client = NotebookClient(
+                    notebook,
+                    timeout=180,
+                    kernel_name=KERNEL_NAME,
+                    resources={"metadata": {"path": str(execution_root)}},
+                )
+                client.execute()
+            code_cells = sum(cell.cell_type == "code" for cell in notebook.cells)
+            error_outputs = sum(
+                output.output_type == "error"
+                for cell in notebook.cells
+                for output in cell.get("outputs", [])
+            )
+            return NotebookExecutionSummary(path, code_cells, error_outputs)
+    finally:
+        try:
+            source_changed = path.read_bytes() != original_bytes
+        except OSError:
+            source_changed = True
+        if source_changed:
+            try:
+                path.write_bytes(original_bytes)
+                restored = path.read_bytes() == original_bytes
+            except OSError as error:
+                raise RuntimeError(
+                    "el notebook fuente cambió y no pudo restaurarse"
+                ) from error
+            if not restored:
+                raise RuntimeError("el notebook fuente cambió y no pudo restaurarse")
+            raise RuntimeError(
+                "el notebook fuente cambió durante la ejecución y fue restaurado"
+            )
 
 
 def main() -> int:
