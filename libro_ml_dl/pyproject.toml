@@ -11,7 +11,7 @@ dependencies = [
 validation = [
     "matplotlib==3.10.8",
     "numpy==2.4.6",
-    "pandas==3.0.2",
+    "pandas==3.0.5",
     "ruff==0.16.4",
     "scikit-learn==1.8.0",
 ]
@@ -22,7 +22,7 @@ notebooks = [
     "nbclient>=0.10,<1",
     "nbformat>=5.10,<6",
     "numpy==2.4.6",
-    "pandas==3.0.2",
+    "pandas==3.0.5",
     "scikit-learn==1.8.0",
 ]
 security = [
