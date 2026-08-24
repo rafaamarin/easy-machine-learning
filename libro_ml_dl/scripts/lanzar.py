@@ -172,26 +172,24 @@ def main() -> int:
     http_process: subprocess.Popen[bytes] | None = None
     jupyter_process: subprocess.Popen[bytes] | None = None
     try:
-        web_port = find_free_port(arguments.puerto_web)
-        web_url = f"http://127.0.0.1:{web_port}/"
-        http_process = subprocess.Popen(
-            build_web_command(book_root, web_port),
-            start_new_session=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        wait_for_port(web_port, timeout_seconds=10, process=http_process)
-    except Exception:
-        if http_process is not None:
-            stop_processes([http_process])
-        print(
-            "ERROR: el servidor web local no pudo iniciarse. "
-            "Revisa el entorno y el puerto configurado.",
-            file=sys.stderr,
-        )
-        return 1
+        try:
+            web_port = find_free_port(arguments.puerto_web)
+            web_url = f"http://127.0.0.1:{web_port}/"
+            http_process = subprocess.Popen(
+                build_web_command(book_root, web_port),
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            wait_for_port(web_port, timeout_seconds=10, process=http_process)
+        except Exception:
+            print(
+                "ERROR: el servidor web local no pudo iniciarse. "
+                "Revisa el entorno y el puerto configurado.",
+                file=sys.stderr,
+            )
+            return 1
 
-    try:
         manifest_path = (
             book_root / "assets" / "vendor" / "pyodide" / "manifest.local.json"
         )
@@ -268,10 +266,13 @@ def main() -> int:
     except KeyboardInterrupt:
         return 0
     finally:
-        remaining_processes = [http_process]
+        remaining_processes = []
+        if http_process is not None:
+            remaining_processes.append(http_process)
         if jupyter_process is not None:
             remaining_processes.append(jupyter_process)
-        stop_processes(remaining_processes)
+        if remaining_processes:
+            stop_processes(remaining_processes)
 
 
 if __name__ == "__main__":

@@ -2,13 +2,18 @@
 
 Fecha de ejecución: 2026-08-24.
 
-Candidato base: `a81646b4f554409374c08b79c7f42f4a49d645c3`.
+Candidato original: `a81646b4f554409374c08b79c7f42f4a49d645c3`.
+Base de esta ronda acotada: `fd3d9a7853063ff931c94653e3780e4c5dd3a52e`.
 
-Estado: **CANDIDATA POST-FIX, PENDIENTE DE SCOPED RE-REVIEW**. La revisión final
+Estado: **CANDIDATA POST-FIX; NO ES UN PASS DE PUBLICACIÓN**. La revisión final
 whole-branch de `40a99d7…a81646b` encontró 0 Critical, 6 Important y 6 Minor.
-Esta ola implementa correcciones para los 6 Important y los Minors de bajo
-riesgo asociados, pero no declara su cierre hasta recibir re-review acotada.
-No existe evidencia nueva de CI, navegador o remoto.
+La primera ola implementó sus correcciones; la scoped re-review posterior de
+`fd3d9a7` encontró 0 Critical y 2 Important adicionales: sintaxis alternativas
+de supresión omitidas y Ctrl-C durante readiness HTTP sin cleanup. Esta ronda
+implementa ambos fixes. Una nueva revisión de alcance exclusivo sobre esos dos
+cambios encontró 0 Critical y 0 Important, pero no constituye aprobación global
+ni cubrió este documento modificado en paralelo. No existe evidencia nueva de
+CI, navegador interactivo o remoto.
 
 ## Alcance e inventario del candidato
 
@@ -47,21 +52,27 @@ la candidata actual.
 ## detect-secrets 1.5.0 e Historial Git
 
 - El gate candidato añade un segundo pase `--only-allowlisted` para árbol
-  actual, índice staged y cada snapshot del Historial Git.
+  actual, índice staged y cada snapshot del Historial Git. El pase recibe todos
+  los candidatos, sin prefiltrado local ni réplica manual de las expresiones
+  regulares de `detect-secrets`.
+- Una vista temporal conserva rutas y líneas, representa archivos vacíos con
+  una línea inocua y sustituye bytes no UTF-8 sólo para que el filtro fijado de
+  `detect-secrets` pueda inspeccionar sus pragmas. La adjudicación se comprueba
+  siempre contra el blob original y el registro cerrado.
 - El índice se materializa con `git write-tree`; los blobs staged se escanean
   aunque el worktree contenga otra copia.
-- Historial base: 15 commits mediante `git rev-list --all`; la candidata añade
-  un único commit post-fix.
+- La base de esta ronda contiene 16 commits mediante `git rev-list --all`; la
+  candidata añade un único commit acotado.
 - Cada commit se inventarió con `git ls-tree -rz --full-tree` y cada blob se
   materializó con `git cat-file` en un directorio temporal. `export-ignore` no
   puede excluir contenido histórico del escaneo.
 - La candidata contiene 26 supresiones actuales verificadas. La adjudicación
   exige ruta, línea, detector, sintaxis exacta, valor aprobado y exactamente una
   ocurrencia por ubicación y commit; cualquier otra supresión falla redactada.
-- El gate precommit adjudicó `actual=26`, `indice=26` e `historial=296`. El
-  único snapshot nuevo contiene esas mismas 26 ubicaciones, por lo que el gate
-  fresco postcommit debe adjudicar `historial=322`; el resultado ejecutado se
-  conserva en el informe local ignorado.
+- El gate precommit de esta ronda adjudicó `actual=26`, `indice=26` e
+  `historial=322`. El único snapshot nuevo contiene esas mismas 26 ubicaciones,
+  por lo que el gate fresco postcommit debe adjudicar `historial=348`; el
+  resultado ejecutado se conserva en el informe local ignorado.
 - Los informes muestran exclusivamente commit, ruta, línea y detector; nunca
   el valor candidato. Los fallos de Git o de las herramientas producen una
   categoría segura y hacen fallar el gate.
@@ -112,7 +123,9 @@ requeridos, runtime Pyodide y contenido construido; rechaza listados, dotfiles,
 symlinks, escapes, configuración, scripts, fuentes, locks y `Host` que no sea
 loopback con el puerto real. GET y HEAD tienen pruebas HTTP reales. Un smoke del
 launcher confirmó recurso público y HEAD con 200, rutas privadas y Host atacante
-sin 200, cierre limpio por Ctrl-C y puerto liberado.
+sin 200, cierre limpio por Ctrl-C y puerto liberado. Una regresión determinista
+adicional interrumpe `wait_for_port` después de crear HTTP y exige exit 0 más
+cleanup del proceso creado.
 
 La aceptación interactiva de UI no se ejecutó. Por ello no se
 afirma haber ejecutado visualmente un ejercicio, cambiado la salida mediante un
@@ -149,8 +162,12 @@ quedó recuperable en la Papelera.
 La revisión whole-branch final verificó 0 Critical, 6 Important y 6 Minor sobre
 la base `a81646b…`. Los 6 Important fueron: fallback Jupyter, superficie HTTP,
 supresiones, colisiones APFS, concurrencia de notebooks y matriz de dependencias.
-Las correcciones de esta candidata esperan scoped re-review; no se declara un
-veredicto de publicación.
+La scoped re-review de la primera corrección encontró 0 Critical y 2 Important:
+el prefiltrado del segundo pase omitía sintaxis reconocidas por la dependencia,
+y Ctrl-C durante readiness HTTP podía dejar el hijo escuchando. Esta candidata
+incluye regresiones y fixes para ambos. La re-review exclusiva de este diff
+encontró 0 Critical y 0 Important, con 51/51 focales; excluyó el documento de
+auditoría modificado concurrentemente y no declara un veredicto de publicación.
 
 Los Minors asociados se corrigen con inventario global mediante
 `git ls-files -z '*.ipynb'`, escaneo del índice, Python de publicación ligado a
@@ -163,8 +180,9 @@ Los Minors asociados se corrigen con inventario global mediante
   una verificación de tamaños y reintentos suficientemente conservadora.
 - No se añade timeout automático a la ejecución Pyodide: la cancelación manual
   existente se conserva y este cambio queda explícitamente fuera del alcance.
-- La scoped re-review sigue pendiente; los gates postcommit, aunque estén
-  verdes en el informe local, no sustituyen ese veredicto independiente.
+- La scoped re-review completada fue exclusiva de estos dos fixes y dejó fuera
+  el documento de auditoría concurrente; no es una aprobación global. Los gates
+  postcommit del informe local tampoco sustituyen ese veredicto de publicación.
 - La aceptación interactiva de navegador no fue posible; sólo existe evidencia
   HTTP loopback y del recurso principal de Pyodide con respuesta 200.
 - GitHub Actions, protección de ramas, secret scanning, push protection y las

@@ -86,6 +86,26 @@ class LauncherTests(unittest.TestCase):
         self.assertIn("--ServerApp.port_retries=0", command)
         self.assertNotIn("--allow-root", command)
 
+    def test_ctrl_c_during_http_readiness_cleans_http_process(self) -> None:
+        http_process = Mock(pid=101)
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["lanzar.py", "--sin-jupyter", "--sin-navegador"],
+            ),
+            patch("scripts.lanzar.find_free_port", return_value=8000),
+            patch("scripts.lanzar.subprocess.Popen", return_value=http_process),
+            patch(
+                "scripts.lanzar.wait_for_port",
+                side_effect=KeyboardInterrupt,
+            ),
+            patch("scripts.lanzar.stop_processes") as stop_processes_mock,
+        ):
+            self.assertEqual(main(), 0)
+
+        stop_processes_mock.assert_called_once_with([http_process])
+
     def test_public_project_jupyter_is_selected_while_vault_is_served(self) -> None:
         book_root = Path(__file__).resolve().parents[2]
         vault_root = Path("/tmp/vault")

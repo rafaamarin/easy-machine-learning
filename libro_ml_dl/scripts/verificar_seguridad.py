@@ -45,9 +45,6 @@ APPROVED_CORE_SHA256 = "".join(
     )
 )
 APPROVED_ABC_SHA256 = hashlib.sha256(b"abc").hexdigest()
-ALLOWLIST_PRAGMA_PATTERN_BYTES = re.compile(
-    rb"# pragma: allowlist secret(?:  # noqa: E501)?$"
-)
 
 
 @dataclass(frozen=True, order=True)
@@ -407,33 +404,24 @@ def run_secret_scan(
     return _normalize_secret_paths(findings, repo_root)
 
 
-def _suppression_locations(
+def _materialize_allowlist_scan_view(
     repo_root: Path,
     candidates: list[Path],
-) -> set[tuple[str, int]]:
-    locations: set[tuple[str, int]] = set()
+    snapshot_root: Path,
+) -> list[Path]:
+    scan_candidates: list[Path] = []
     for path in candidates:
         try:
             source = path.read_bytes()
+            relative_path = path.relative_to(repo_root)
+            destination = snapshot_root / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            scan_source = source.decode("utf-8", errors="replace").encode("utf-8")
+            destination.write_bytes(scan_source or b"\n")
         except OSError as error:
-            raise RuntimeError("no se pudo inspeccionar una supresión") from error
-        relative_path = path.relative_to(repo_root).as_posix()
-        for line_number, line in enumerate(source.splitlines(), start=1):
-            if ALLOWLIST_PRAGMA_PATTERN_BYTES.search(line):
-                locations.add((relative_path, line_number))
-    return locations
-
-
-def _allowlist_candidate_files(candidates: list[Path]) -> list[Path]:
-    marker = b"# pragma: allowlist secret"
-    selected: list[Path] = []
-    for path in candidates:
-        try:
-            if marker in path.read_bytes():
-                selected.append(path)
-        except OSError as error:
-            raise RuntimeError("no se pudo inspeccionar una supresión") from error
-    return selected
+            raise RuntimeError("no se pudo preparar el pase de supresiones") from error
+        scan_candidates.append(destination)
+    return scan_candidates
 
 
 def _is_approved_secret(
@@ -472,24 +460,20 @@ def scan_security_snapshot(
 ) -> SecretScanResult:
     candidate_files = _candidate_files(repo_root) if candidates is None else candidates
     normal_findings = run_secret_scan(repo_root, candidate_files)
-    allowlist_candidates = _allowlist_candidate_files(candidate_files)
-    allowlisted_findings = (
-        run_secret_scan(
+    with tempfile.TemporaryDirectory(prefix="easy_ml_allowlist_") as directory:
+        allowlist_root = Path(directory) / "snapshot"
+        allowlist_root.mkdir()
+        allowlist_candidates = _materialize_allowlist_scan_view(
             repo_root,
+            candidate_files,
+            allowlist_root,
+        )
+        allowlisted_findings = run_secret_scan(
+            allowlist_root,
             allowlist_candidates,
             only_allowlisted=True,
         )
-        if allowlist_candidates
-        else []
-    )
     combined = [*normal_findings, *allowlisted_findings]
-    allowlisted_locations = {
-        (finding.path, finding.line_number) for finding in allowlisted_findings
-    }
-    for path, line_number in sorted(
-        _suppression_locations(repo_root, candidate_files) - allowlisted_locations
-    ):
-        combined.append(SecretFinding(path, line_number, "Supresión no registrada"))
     location_counts = Counter(
         (finding.path, finding.line_number) for finding in combined
     )

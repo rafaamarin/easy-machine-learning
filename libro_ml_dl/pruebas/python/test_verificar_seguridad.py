@@ -350,10 +350,13 @@ class SecurityVerificationTests(unittest.TestCase):
     def test_snapshot_scan_runs_the_only_allowlisted_pass(self) -> None:
         with TemporaryDirectory() as directory:
             repo_root = Path(directory)
-            repo_root.joinpath("ordinary.txt").write_text(
+            ordinary = repo_root / "ordinary.txt"
+            ordinary.write_text(
                 'note = "# pragma: allowlist secret"\n',
                 encoding="utf-8",
             )
+            unrelated = repo_root / "unrelated.txt"
+            unrelated.write_text("contenido público\n", encoding="utf-8")
             scanner_commands: list[list[str]] = []
 
             def scan_without_findings(
@@ -380,7 +383,7 @@ class SecurityVerificationTests(unittest.TestCase):
             ):
                 result = scan_security_snapshot(
                     repo_root,
-                    [repo_root / "ordinary.txt"],
+                    [ordinary, unrelated],
                 )
 
         self.assertEqual(result.rejected, ())
@@ -388,6 +391,10 @@ class SecurityVerificationTests(unittest.TestCase):
         self.assertEqual(len(scanner_commands), 2)
         self.assertNotIn("--only-allowlisted", scanner_commands[0])
         self.assertIn("--only-allowlisted", scanner_commands[1])
+        self.assertEqual(
+            set(scanner_commands[1][scanner_commands[1].index("--") + 1 :]),
+            {"ordinary.txt", "unrelated.txt"},
+        )
 
     def test_current_allowlisted_secret_is_rejected_and_redacted(self) -> None:
         candidate = "".join(("synthetic", "-private-", "value-", "D" * 32))
@@ -432,6 +439,56 @@ class SecurityVerificationTests(unittest.TestCase):
         )
         self.assertIn("binary_secret.dat:2", historical_report)
         self.assertNotIn(candidate, historical_report)
+
+    def test_alternative_allowlist_syntaxes_are_rejected_everywhere(self) -> None:
+        candidates = [
+            "".join(("synthetic", "-private-", "value-", letter * 32))
+            for letter in "HIJK"
+        ]
+        fixtures = {
+            "whitelist.py": (
+                f'api_key = "{candidates[0]}"  # pragma: whitelist secret\n'.encode()
+            ),
+            "hyphen.py": (
+                f'api_key = "{candidates[1]}"  # pragma: allowlist-secret\n'.encode()
+            ),
+            "comment.js": (
+                f'const api_key = "{candidates[2]}"; // pragma: allowlist secret\n'
+            ).encode(),
+            "nextline.dat": (
+                b"\xff\n# pragma: allowlist nextline secret\n"
+                + f'api_key = "{candidates[3]}"\n'.encode()
+            ),
+        }
+        expected_locations = {
+            "whitelist.py:1",
+            "hyphen.py:1",
+            "comment.js:1",
+            "nextline.dat:3",
+        }
+
+        with TemporaryDirectory() as directory:
+            repo_root = Path(directory)
+            self._initialize_git_repo(repo_root)
+            for path, payload in fixtures.items():
+                repo_root.joinpath(path).write_bytes(payload)
+            self._commit_all(repo_root, "alternative suppressed secrets")
+
+            current_result = scan_security_snapshot(repo_root)
+            index_result = scan_git_index(repo_root)
+            with self.assertRaises(HistoricalScanError) as raised:
+                scan_git_history(repo_root)
+
+        reports = [
+            "\n".join(render_secret_findings(list(current_result.rejected))),
+            "\n".join(render_secret_findings(list(index_result.rejected))),
+            "\n".join(render_historical_findings(raised.exception.findings)),
+        ]
+        for report in reports:
+            for location in expected_locations:
+                self.assertIn(location, report)
+            for candidate in candidates:
+                self.assertNotIn(candidate, report)
 
     def test_current_approved_suppressions_are_exactly_adjudicated(self) -> None:
         result = scan_security_snapshot(SECURITY_REPO_ROOT)
