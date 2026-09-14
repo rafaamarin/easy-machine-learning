@@ -9,7 +9,7 @@ dependencies = [
 
 [dependency-groups]
 validation = [
-    "matplotlib==3.10.8",
+    "matplotlib==3.11.2",
     "numpy==2.4.6",
     "pandas==3.0.2",
     "ruff==0.16.4",
@@ -18,7 +18,7 @@ validation = [
 notebooks = [
     "ipykernel>=6.30,<8",
     "jupyterlab>=4.4,<5",
-    "matplotlib==3.10.8",
+    "matplotlib==3.11.2",
     "nbclient>=0.10,<1",
     "nbformat>=5.10,<6",
     "numpy==2.4.6",
