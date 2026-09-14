@@ -12,7 +12,7 @@ validation = [
     "matplotlib==3.10.8",
     "numpy==2.4.6",
     "pandas==3.0.2",
-    "ruff==0.16.4",
+    "ruff==0.16.7",
     "scikit-learn==1.8.0",
 ]
 notebooks = [
